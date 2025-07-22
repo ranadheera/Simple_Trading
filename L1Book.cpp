@@ -1,0 +1,17 @@
+#include "L1Book.h"
+
+void L1Book::update(int index, const Marketdata& data)
+{
+    L1BookEntry tmp;
+    bool entrPresent = getData(index, tmp);
+
+    if (!entrPresent || data.timpstamp > tmp.timpstamp) {
+        tmp.bid_price = data.bid_price;
+        tmp.ask_price = data.ask_price;
+        tmp.bid_volume = data.bid_volume;
+        tmp.bid_price = data.bid_price;
+        tmp.timpstamp = data.timpstamp;
+    }
+
+    SWMRBuffer<L1BookEntry>::update(index, tmp);
+}
