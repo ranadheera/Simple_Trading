@@ -8,4 +8,4 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # add the executable
-add_executable(Simple_Trading main.cpp CsvParse.cpp Dispatcher.cpp L1Book.cpp SymbolIds.cpp Updaters.cpp)
+add_executable(Simple_Trading main.cpp CsvParse.cpp Dispatcher.cpp L1Book.cpp L2Book.cpp SymbolIds.cpp Updaters.cpp)
