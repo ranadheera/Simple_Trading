@@ -10,6 +10,7 @@
 #include "Buffer.h"
 #include "Dispatcher.h"
 #include "Updaters.h"
+#include "L2Book.h"
 
 
 int main() {
@@ -31,7 +32,8 @@ int main() {
     RingBuffer<Marketdata>  buffer(500001);
     L1Buffer l1buffer(SymbolIdCache.getNumSymbols());
     L1Book l1book(SymbolIdCache.getNumSymbols());
-    UpdatersList updaterList(l1buffer, l1book, 2, 1000);
+    L2Book l2book(SymbolIdCache.getNumSymbols());
+    UpdatersList updaterList(l1buffer, l1book, l2book, 2, 1000);
     updaterList.start();
     Dispatcher dispatcher(buffer, updaterList);
     dispatcher.start();

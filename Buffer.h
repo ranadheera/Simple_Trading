@@ -25,24 +25,25 @@ private:
 
 template<typename T> void SWMRBuffer<T>::update(int index, const T& data)
 {
+    buffer_[index].updateCount_.fetch_add(1, std::memory_order_release);
     buffer_[index].data_ = data;
-    buffer_[index].updateCount_.fetch_add(1);
+    buffer_[index].updateCount_.fetch_add(1, std::memory_order_release);
 }
 
 template<typename T> bool SWMRBuffer<T>::getData(int index, T& data) const
 {
-    auto updateCount = buffer_[index].updateCount_.load();
+    std::size_t updateCount1;
+    std::size_t updateCount2;
+    do {
+        updateCount1 = buffer_[index].updateCount_.load(std::memory_order_acquire);
 
-    if (updateCount == 0)
-        return false;
+        if (updateCount1 == 0)
+            return false;
 
-    data = buffer_[index].data_;
-
-
-    for (auto tmpCount = buffer_[index].updateCount_.load(); tmpCount != updateCount ; updateCount = tmpCount) {
         data = buffer_[index].data_;
-    }
 
+        updateCount2 = buffer_[index].updateCount_.load(std::memory_order_acquire);
+    } while ((updateCount1 != updateCount2) && (updateCount2 %2));
     return true;
 }
 
