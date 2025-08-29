@@ -1,15 +1,15 @@
 #include "L2Book.h"
 
 
-SymbolBook::SymbolBook(int lowerbound, int upperbound, int tikSize): 
-lowerbound_(lowerbound), upperbound_(upperbound), tikSize_(tikSize),  size_((upperbound_ -lowerbound + 1)*tikSize_), bidArray_(size_, 0), 
-askArray_(size_, 0), maxAskValIndex_(lowerbound - 1), minBidValIndex_(upperbound_ + 1)
+SymbolBook::SymbolBook(int lowerbound, int upperbound, int tikSize, L1Book &l1book): 
+lowerbound_(lowerbound), upperbound_(upperbound), tikSize_(tikSize),  size_((upperbound_ - lowerbound_ + 1)*tikSize_), bidArray_(size_, 0), 
+askArray_(size_, 0), maxAskValIndex_(- 1), minBidValIndex_(size_), l1book_(l1book)
 {
 
 }
 
 SymbolBook::SymbolBook(const SymbolBook& book) : lowerbound_(book.lowerbound_), upperbound_(book.upperbound_), tikSize_(book.tikSize_),  size_(book.size_), bidArray_(size_, 0), 
-askArray_(size_, 0), maxAskValIndex_(book.maxAskValIndex_), minBidValIndex_(book.minBidValIndex_)
+askArray_(size_, 0), maxAskValIndex_(book.maxAskValIndex_), minBidValIndex_(book.minBidValIndex_), l1book_(book.l1book_)
 {
     int update1;
     int update2;
@@ -38,7 +38,7 @@ bool SymbolBook::update(const Marketdata &data) {
         return false;
 
     auto prevAskVal = askArray_[askIndex];
-    auto prevBidVal = bidArray_[askIndex];
+    auto prevBidVal = bidArray_[bidIndex];
     int newMaxAskValIndex = maxAskValIndex_;
     int newMinBidValIndex = minBidValIndex_;
 
@@ -71,14 +71,37 @@ bool SymbolBook::update(const Marketdata &data) {
         
         newMinBidValIndex = indexT;
     }
+    int maxAskValIndexT = maxAskValIndex_;
+    int minBidValIndexT = minBidValIndex_;
 
-
-    updates.fetch_add(1, std::memory_order_release);
+    updates.fetch_add(1, std::memory_order_acq_rel);
     bidArray_[bidIndex] = data.bid_volume;
     askArray_[askIndex] = data.ask_volume;
     maxAskValIndex_ = newMaxAskValIndex;
     minBidValIndex_ = newMinBidValIndex;
-    updates.fetch_add(1, std::memory_order_release);
+    updates.fetch_add(1, std::memory_order_acq_rel);
+
+    L1BookEntry l1Val;
+    l1book_.getData(data.symbol, l1Val);
+    bool updatel1 = false;
+
+    if (maxAskValIndexT != newMaxAskValIndex) {
+        l1Val.ask_price = (double) newMaxAskValIndex / tikSize_;
+        l1Val.ask_volume = askArray_[newMaxAskValIndex];
+        l1Val.timpstamp = data.timpstamp;
+        updatel1 = true;
+    }
+
+    if (minBidValIndexT  != newMinBidValIndex) {
+        l1Val.bid_price = (double) newMinBidValIndex / tikSize_;
+        l1Val.bid_volume = bidArray_[newMinBidValIndex];
+        l1Val.timpstamp = data.timpstamp;
+        updatel1 = true;
+    }
+    
+    if (updatel1)
+        l1book_.update(data.symbol, l1Val);
+        
     return true;
 }
 
@@ -124,7 +147,7 @@ bool SymbolBook::getMaxAskPriceVolume(double &price, int &volume) const {
     return retVal;
 }
 
-L2Book::L2Book(std::size_t size):symbolBooks_(size, SymbolBook(0,1000,100)) {}
+L2Book::L2Book(std::size_t size, L1Book &l1book):symbolBooks_(size, SymbolBook(0,5000,100, l1book)) {}
 
 bool L2Book::update(std::size_t index, const Marketdata &data) {
     return symbolBooks_[index].update(data);    

@@ -11,6 +11,8 @@
 #include "Dispatcher.h"
 #include "Updaters.h"
 #include "L2Book.h"
+#include "MarketTick.h"
+#include "StrategyEngine.h"
 
 
 int main() {
@@ -29,13 +31,14 @@ int main() {
         return 0;
     }
 
-    RingBuffer<Marketdata>  buffer(500001);
-    L1Buffer l1buffer(SymbolIdCache.getNumSymbols());
+    SWSRRingBuffer<Marketdata>  buffer(500001);
+    MarketTick marketTick(SymbolIdCache.getNumSymbols());
     L1Book l1book(SymbolIdCache.getNumSymbols());
-    L2Book l2book(SymbolIdCache.getNumSymbols());
-    UpdatersList updaterList(l1buffer, l1book, l2book, 2, 1000);
-    updaterList.start();
-    Dispatcher dispatcher(buffer, updaterList);
+    L2Book l2book(SymbolIdCache.getNumSymbols(), l1book);
+    BookUpdaters bookUpdaters(l1book, l2book, 2, 1000);
+    StrategyEngine strategyEngine(marketTick, SymbolIdCache.getNumSymbols(), 2);
+    Dispatcher dispatcher(buffer, marketTick, bookUpdaters, strategyEngine);
+
     dispatcher.start();
 
     auto start = std::chrono::high_resolution_clock::now();
@@ -43,58 +46,54 @@ int main() {
     std::size_t length;
 
 
-        for (int i = 0; i < 6; ++i)
-            parser.getNextToken(ptr, length);
+    for (int i = 0; i < 6; ++i)
+        parser.getNextToken(ptr, length);
 
-        while(parser.getNextToken(ptr, length)) {
-            Marketdata d;
-            std::from_chars(ptr, ptr+length, d.timpstamp);
-            parser.getNextToken(ptr, length);
-            auto lable = std::string(ptr,length);
-            d.symbol = SymbolIdCache.getId(lable);
-
-            if (d.symbol == -1) {
-                std::cout << "ignore packet for : " << lable << "\n";
-            }
-
-            parser.getNextToken(ptr, length);
-            std::from_chars(ptr, ptr+length, d.bid_price);
-            parser.getNextToken(ptr, length);
-            std::from_chars(ptr, ptr+length, d.ask_price);
-            parser.getNextToken(ptr, length);
-            std::from_chars(ptr, ptr+length, d.bid_volume);
-            parser.getNextToken(ptr, length);
-            std::from_chars(ptr, ptr+length, d.ask_volume);
-            buffer.write(std::move(d));
-        }
-
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end -start);
-        std::cout << "Time : " << duration.count() << std::endl;
-
+    while(parser.getNextToken(ptr, length)) {
         Marketdata d;
-        L1BookEntry l;
-        int i = 0;
+        std::from_chars(ptr, ptr+length, d.timpstamp);
+        parser.getNextToken(ptr, length);
+        auto lable = std::string(ptr,length);
+        d.symbol = SymbolIdCache.getId(lable);
 
-        while(1) {
-            std::cout << "-------\n";
-
-            for (int i = 0;  i < SymbolIdCache.getNumSymbols(); ++i) {
-                if (l1buffer.getData(i, d)) {
-                    std::cout << d << "\n";
-                }
-            }
-
-            std::cout << "++++++++\n";
-
-            for (int i = 0;  i < SymbolIdCache.getNumSymbols(); ++i) {
-                if (l1book.getData(i, l)) {
-                    std::cout << l << "\n";
-                }
-            }
+        if (d.symbol == -1) {
+            std::cout << "ignore packet for : " << lable << "\n";
         }
 
+        parser.getNextToken(ptr, length);
+        std::from_chars(ptr, ptr+length, d.bid_price);
+        parser.getNextToken(ptr, length);
+        std::from_chars(ptr, ptr+length, d.ask_price);
+        parser.getNextToken(ptr, length);
+        std::from_chars(ptr, ptr+length, d.bid_volume);
+        parser.getNextToken(ptr, length);
+        std::from_chars(ptr, ptr+length, d.ask_volume);
+        buffer.write(std::move(d));
+    }
 
+    dispatcher.stop();
+    Marketdata d;
+    int i = 0;
+    std::cout << "-------\n";
+
+    for (int i = 0;  i < SymbolIdCache.getNumSymbols(); ++i) {
+        if (marketTick.getData(i, d)) {
+            std::cout << d << "\n";
+        }
+    }
+
+
+    L1BookEntry l;
+    std::cout << "++++++++\n";
+    for (int i = 0;  i < SymbolIdCache.getNumSymbols(); ++i) {
+        if (l1book.getData(i, l)) {
+            std::cout << l << "\n";
+        }
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end -start);
+    std::cout << "Time : " << duration.count() << std::endl;
 
     return 0;
 }

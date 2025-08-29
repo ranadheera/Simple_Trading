@@ -1,6 +1,6 @@
 #include "L1Book.h"
 
-void L1Book::update(int index, const Marketdata& data)
+/*void L1Book::update(int index, const Marketdata& data)
 {
     L1BookEntry tmp;
     bool entrPresent = getData(index, tmp);
@@ -9,9 +9,10 @@ void L1Book::update(int index, const Marketdata& data)
         tmp.bid_price = data.bid_price;
         tmp.ask_price = data.ask_price;
         tmp.bid_volume = data.bid_volume;
-        tmp.bid_price = data.bid_price;
+        tmp.ask_volume = data.ask_volume;
         tmp.timpstamp = data.timpstamp;
+        SWMRArray<L1BookEntry>::update(index, tmp);
     }
 
-    SWMRBuffer<L1BookEntry>::update(index, tmp);
-}
+    //SWMRArray<L1BookEntry>::update(index, tmp);
+}*/

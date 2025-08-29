@@ -6,10 +6,11 @@
 #include <stdexcept>
 #include <atomic>
 
-template<typename T> class RingBuffer {
+
+template<typename T> class SWSRRingBuffer {
 public:
-    RingBuffer(std::size_t size);
-    ~RingBuffer();
+    SWSRRingBuffer(std::size_t size);
+    ~SWSRRingBuffer();
     void write(T data);
     bool read(T &data);
     bool empty();
@@ -29,10 +30,10 @@ private:
     std::atomic<T*> readPtr_;
 };
 
-template<typename T> class NonOverridableRingBuffer {
+template<typename T> class SWSRNonOverridableRingBuffer {
 public:
-    NonOverridableRingBuffer(std::size_t size);
-    ~NonOverridableRingBuffer();
+    SWSRNonOverridableRingBuffer(std::size_t size);
+    ~SWSRNonOverridableRingBuffer();
     bool write(const T &data);
     bool read(T &data);
     bool empty();
@@ -53,7 +54,7 @@ private:
     std::atomic<std::size_t> count_;
 };
 
-template<typename T>  RingBuffer<T>::RingBuffer(std::size_t size) : size_(size)
+template<typename T>  SWSRRingBuffer<T>::SWSRRingBuffer(std::size_t size) : size_(size)
 {
     if (size_ <= 0) {
         throw std::invalid_argument("Size must be greater than zero.");
@@ -63,12 +64,12 @@ template<typename T>  RingBuffer<T>::RingBuffer(std::size_t size) : size_(size)
     readPtr_.store(array_, std::memory_order_release);
 }
 
-template<typename T>  RingBuffer<T>:: ~RingBuffer() 
+template<typename T>  SWSRRingBuffer<T>:: ~SWSRRingBuffer() 
 {
     delete[] array_;
 }
 
-template<typename T> void  RingBuffer<T>::write(T data) {
+template<typename T> void  SWSRRingBuffer<T>::write(T data) {
     T* tmpWrite = writePtr_.load(std::memory_order_acquire);
     *tmpWrite = std::move(data);
     incrementPointer(tmpWrite);
@@ -80,7 +81,7 @@ template<typename T> void  RingBuffer<T>::write(T data) {
 }
 
 
-template<typename T> bool RingBuffer<T>::read(T &data) {
+template<typename T> bool SWSRRingBuffer<T>::read(T &data) {
     auto readPtrTmp = readPtr_.load(std::memory_order_acquire);
 
     if (writePtr_.load(std::memory_order_acquire) == readPtrTmp)
@@ -93,11 +94,11 @@ template<typename T> bool RingBuffer<T>::read(T &data) {
 
 }
 
-template<typename T> bool RingBuffer<T>::empty() {
+template<typename T> bool SWSRRingBuffer<T>::empty() {
     return (writePtr_.load(std::memory_order_acquire) == readPtr_.load(std::memory_order_acquire));
 }
  
-template<typename T> NonOverridableRingBuffer<T>::NonOverridableRingBuffer(std::size_t size) : size_(size)
+template<typename T> SWSRNonOverridableRingBuffer<T>::SWSRNonOverridableRingBuffer(std::size_t size) : size_(size)
 {
     if (size_ <= 0) {
         throw std::invalid_argument("Size must be greater than zero.");
@@ -108,22 +109,22 @@ template<typename T> NonOverridableRingBuffer<T>::NonOverridableRingBuffer(std::
     count_.store(0, std::memory_order_release);
 }
 
-template<typename T> NonOverridableRingBuffer<T>::~NonOverridableRingBuffer()
+template<typename T> SWSRNonOverridableRingBuffer<T>::~SWSRNonOverridableRingBuffer()
 {
     delete[] array_;
 }
 
-template<typename T> bool NonOverridableRingBuffer<T>::write(const T &data)
+template<typename T> bool SWSRNonOverridableRingBuffer<T>::write(const T &data)
 {
     if (count_.load(std::memory_order_acquire) == size_)
             return false;
 
         *writePtr_ = data;
         incrementPointer(writePtr_);
-        count_.fetch_add(1, std::memory_order_release);
+        count_.fetch_add(1, std::memory_order_acq_rel);
 }
 
-template<typename T> bool NonOverridableRingBuffer<T>::read(T &data) {
+template<typename T> bool SWSRNonOverridableRingBuffer<T>::read(T &data) {
 
     if (count_.load(std::memory_order_acquire) == 0)
         return false;
@@ -132,11 +133,11 @@ template<typename T> bool NonOverridableRingBuffer<T>::read(T &data) {
 
     data = std::move(*readPtr_);
     incrementPointer(readPtr_);
-    count_.fetch_sub(1, std::memory_order_release);
+    count_.fetch_sub(1, std::memory_order_acq_rel);
     return true;
 }
 
-template<typename T> bool NonOverridableRingBuffer<T>::empty() {
+template<typename T> bool SWSRNonOverridableRingBuffer<T>::empty() {
     return (count_.load(std::memory_order_acquire) == 0);
 }
 

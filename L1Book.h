@@ -17,11 +17,11 @@ inline std::ostream& operator<<(std::ostream& os, const L1BookEntry& le) {
 }
 
 
-class L1Book : public SWMRBuffer<L1BookEntry>
+class L1Book : public SWMRArray<L1BookEntry>
 {
 public:
-    L1Book(std::size_t size) : SWMRBuffer<L1BookEntry>(size) {}
-    void update(int index, const Marketdata& data);
+    L1Book(std::size_t size) : SWMRArray<L1BookEntry>(size) {}
+   // void update(int index, const L1Boo& data);
 };
 
 #endif
