@@ -195,8 +195,4 @@ template<typename T> bool MWMRQueue<T>::pop(T& data)
 }
 */
 
-
-
-
-
 #endif

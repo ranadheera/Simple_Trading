@@ -1,5 +1,5 @@
 #ifndef CVS_PARSER_H
-#define VCS_PARSER_H
+#define CVS_PARSER_H
 
 #include <string>
 
