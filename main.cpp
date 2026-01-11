@@ -13,11 +13,12 @@
 #include "L2Book.h"
 #include "MarketTick.h"
 #include "StrategyEngine.h"
+#include "LogMgr.h"
 
 
 int main() {
 
-    SymbolIds SymbolIdCache("/home/samitha/Downloads/LabelId.csv");
+    /*SymbolIds SymbolIdCache("/home/samitha/Downloads/LabelId.csv");
 
     if (!SymbolIdCache.isReady()) {
         std::cout << "Lables not redy";
@@ -93,7 +94,44 @@ int main() {
 
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end -start);
-    std::cout << "Time : " << duration.count() << std::endl;
+    std::cout << "Time : " << duration.count() << std::endl;*/
 
+    LogMgr logmgr(64);
+    LogFileContext sysLogcontext("system");
+    sysLogcontext.setFileMaxMessageCount(16);
+    sysLogcontext.setBatchWriteMessageCount(4);
+    logmgr.addLogFileContext(LogFileType::SYSTEM, sysLogcontext);
+    logmgr.registerLogMessage<ConnectionSuccess1>(MessageType::CONNECTION_SUCCESS_1);
+    logmgr.registerLogMessage<FileEnd1>(MessageType::FILE_END_1);
+
+    if (!logmgr.start())
+        std::cout << "Log manager failed to start" << std::endl;
+
+    for (int i = 0; i < 64; ++i) {
+        char hostName[20];
+        auto st = snprintf(hostName, 20,
+                            "host %d", i);
+        if (st < 0) {
+            std::cout << "name generating failed" << std::endl;
+        }
+
+        auto msg = ConnectionSuccess1::make(hostName, 1);
+        logmgr.logMessage(LogFileType::SYSTEM, msg);
+    }
+    sleep(5);
+    auto fileReader = logmgr.getLogFileReader(LogFileType::SYSTEM, "system_1.bin");
+
+    if (fileReader) {
+        auto typeMsgPair = fileReader->getNextMessage();
+
+        while (typeMsgPair.first) {
+            if (typeMsgPair.second == MessageType::CONNECTION_SUCCESS_1) {
+                auto conSuccessMsg = static_cast<ConnectionSuccess1*>(typeMsgPair.first);
+                std::cout << conSuccessMsg->getHostName() << " " << conSuccessMsg->getPort() << std::endl;
+            }
+            typeMsgPair = fileReader->getNextMessage();
+        }
+    }
+    logmgr.stop();
     return 0;
 }

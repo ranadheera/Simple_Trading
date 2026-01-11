@@ -10,7 +10,7 @@ void MeanReversionNumData::handleMarketData(const Marketdata &data)
     Marketdata oldval = array_[writeIndex_];
     array_[writeIndex_] = data;
     writeIndex_ = (writeIndex_ + 1) % array_.size();
-    auto price = (data.ask_price + data.bid_price) / 2;
+    auto price = (data.getAskPrice() + data.getBidPrice()) / 2;
     double mean;
     if (count_ < array_.size()) {
         ++count_;
@@ -23,7 +23,7 @@ void MeanReversionNumData::handleMarketData(const Marketdata &data)
         
     } else if (count_ == array_.size()) {
         totVal_ += price;
-        auto lastPrice = (oldval.ask_price + oldval .bid_price) / 2;
+        auto lastPrice = (oldval.getAskPrice() + oldval .getBidPrice()) / 2;
         totVal_ -= lastPrice;
         mean = totVal_ / count_;
     }

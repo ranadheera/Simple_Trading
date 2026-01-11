@@ -2,10 +2,50 @@
 #ifndef RING_BUFFER_H
 #define RING_BUFFER_H
 
+#include <memory>
 #include <utility>
 #include <stdexcept>
 #include <atomic>
 #include <cstdint>
+
+template<typename T> class NonOverridableRingBuffer {
+public:
+    NonOverridableRingBuffer(std::size_t t);
+    bool write(const T& t);
+    bool read(T& t);
+    bool empty() { return (count_ == 0); }
+private:
+    std::size_t size_ = 0;
+    std::unique_ptr<T[]> array_;
+    std::size_t readIndex_ = 0;
+    std::size_t writeIndex_ = 0;
+    std::size_t count_ = 0;
+};
+
+template<typename T> NonOverridableRingBuffer<T>::NonOverridableRingBuffer(std::size_t size) : size_(size), array_(new T[size])
+{
+    
+}
+
+template<typename T> bool NonOverridableRingBuffer<T>::write(const T& t)
+{
+    if (count_ == size_)
+        return false;
+
+    array_[writeIndex_] = t;
+    writeIndex_ = ++writeIndex_ % size_;
+    ++count_;
+}
+
+template<typename T> bool NonOverridableRingBuffer<T>::read(T& t)
+{
+    if (count_ == 0)
+        return false;
+
+    t = array_[readIndex_];
+    readIndex_ = ++readIndex_ % size_;
+    --count_;
+}
 
 template<typename T> class SWSRRingBuffer {
 public:
@@ -52,6 +92,61 @@ private:
     T* writePtr_;
     T* readPtr_;
     std::atomic<std::size_t> count_;
+};
+
+template<typename T> class MWMRNonOverridableSlotRingBuffer {
+private:
+    using Status = uint32_t;
+
+public:
+    struct Slot {
+    friend class MWMRNonOverridableSlotRingBuffer<T>;
+    public:
+        Slot() { status_.store(0, std::memory_order_release);}
+        T& getData();;
+    private:
+        T data_;
+        std::atomic<Status> status_;
+        
+    };
+
+public:
+    MWMRNonOverridableSlotRingBuffer(std::size_t size) : size_(size) {
+        array_ = new Slot[size];
+        writeIndex_.store(0);
+        readIndex_.store(0);
+    }
+    ~MWMRNonOverridableSlotRingBuffer() {
+        delete[] array_;
+    }
+public:
+    Slot* getWriteSlot();
+    Slot* getReadSlot();
+    void setWriteComplete(Slot *t);
+    void setReadComplete(Slot *t);
+
+private:
+    enum SlotStatus {WRITER_IN = 1, READER_IN = 2, DATA_VALID = 4};
+    void setWriterIn(Status &value) { value =  value | WRITER_IN ; }
+    void clearWriterIn(Status &value) { value = value & ~WRITER_IN; }
+    void setReaderIn(Status &value) { value = value | READER_IN; }
+    void clearReaderIn(Status &value) { value = value & ~READER_IN;}
+    void setDataValid(Status &value) { value = value | DATA_VALID; }
+    void clearDataValid(Status &value) { value = value & ~DATA_VALID; }
+
+    bool isWriterIn(Status value) { return value & WRITER_IN; }
+    bool isReaderIn(Status value) { return value & READER_IN; }
+    bool isDataValid(Status value) { return value & DATA_VALID; }
+
+private:
+    inline std::size_t incrementIndex(std::size_t index) {
+    return ++index % size_;
+}
+private:
+   std::size_t size_;
+   std::atomic<int> writeIndex_;
+   std::atomic<int> readIndex_ ;
+   Slot* array_;
 };
 
 template<typename T>  SWSRRingBuffer<T>::SWSRRingBuffer(std::size_t size) : size_(size)
@@ -140,62 +235,6 @@ template<typename T> bool SWSRNonOverridableRingBuffer<T>::read(T &data) {
 template<typename T> bool SWSRNonOverridableRingBuffer<T>::empty() {
     return (count_.load(std::memory_order_acquire) == 0);
 }
-
-
-template<typename T> class MWMRNonOverridableSlotRingBuffer {
-private:
-    using Status = uint32_t;
-
-public:
-    struct Slot {
-    friend class MWMRNonOverridableSlotRingBuffer<T>;
-    public:
-        Slot() { status_.store(0, std::memory_order_release);}
-        T& getData();;
-    private:
-        T data_;
-        std::atomic<Status> status_;
-        
-    };
-
-public:
-    MWMRNonOverridableSlotRingBuffer(std::size_t size) : size_(size) {
-        array_ = new Slot[size];
-        writeIndex_.store(0);
-        readIndex_.store(0);
-    }
-    ~MWMRNonOverridableSlotRingBuffer() {
-        delete[] array_;
-    }
-public:
-    Slot* getWriteSlot();
-    Slot* getReadSlot();
-    void setWriteComplete(Slot *t);
-    void setReadComplete(Slot *t);
-
-private:
-    enum SlotStatus {WRITER_IN = 1, READER_IN = 2, DATA_VALID = 4};
-    void setWriterIn(Status &value) { value =  value | WRITER_IN ; }
-    void clearWriterIn(Status &value) { value = value & ~WRITER_IN; }
-    void setReaderIn(Status &value) { value = value | READER_IN; }
-    void clearReaderIn(Status &value) { value = value & ~READER_IN;}
-    void setDataValid(Status &value) { value = value | DATA_VALID; }
-    void clearDataValid(Status &value) { value = value & ~DATA_VALID; }
-
-    bool isWriterIn(Status value) { return value & WRITER_IN; }
-    bool isReaderIn(Status value) { return value & READER_IN; }
-    bool isDataValid(Status value) { return value & DATA_VALID; }
-
-private:
-    inline std::size_t incrementIndex(std::size_t index) {
-    return ++index % size_;
-}
-private:
-   std::size_t size_;
-   std::atomic<int> writeIndex_;
-   std::atomic<int> readIndex_ ;
-   Slot* array_;
-};
 
 template<typename T> T& MWMRNonOverridableSlotRingBuffer<T>::Slot::getData()
 {

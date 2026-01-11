@@ -23,7 +23,7 @@ void Dispatcher::exec()
         if (ringBuffer_.read(data)) {
             if (marketTick_.update(getIndex(data), data)) {
                 bookupdatrs_.sendToUpdater(data);
-                strategyEngine_.update(data.symbol);
+                strategyEngine_.update(data.getSymbolID());
             }
         }
     }
