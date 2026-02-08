@@ -2,12 +2,12 @@
 #define SESSION_H
 
 #include "Connection.h"
-#include "RingBuffer.h"
 #include "Message.h"
+#include "MWMRNoOverWriteSlotRingBuffer.h"
 
 class Session {
 public:
-    using OutMessageQueue =  MWMRNonOverridableSlotRingBuffer<OutMessage>;
+    using OutMessageQueue =  MWMRNoOverWriteSlotRingBuffer<OutMessage>;
 public:
     Session(const std::string host, int port, Connection::IpvType ipvType = Connection::IpvType::IPV4, 
         std::size_t outueSize = 256, std::size_t sentQueueSize = 256);

@@ -1,4 +1,3 @@
-#include "RingBuffer.h"
 #include "CsvParser.h"
 #include <iostream>
 #include <fstream>
@@ -14,6 +13,7 @@
 #include "MarketTick.h"
 #include "StrategyEngine.h"
 #include "LogMgr.h"
+#include "FastRingBuffer.h"
 
 
 int main() {
@@ -96,7 +96,7 @@ int main() {
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end -start);
     std::cout << "Time : " << duration.count() << std::endl;*/
 
-    LogMgr logmgr(64);
+    /*LogMgr logmgr(64);
     LogFileContext sysLogcontext("system");
     sysLogcontext.setFileMaxMessageCount(16);
     sysLogcontext.setBatchWriteMessageCount(4);
@@ -132,6 +132,84 @@ int main() {
             typeMsgPair = fileReader->getNextMessage();
         }
     }
-    logmgr.stop();
+    logmgr.stop();*/
+
+    /*FastRingBuffer<int> testbuffer(5);
+
+    for (int i = 0; i < 6; ++i) {
+        testbuffer.push(i);
+    }
+
+    auto bIter = testbuffer.begin();
+    auto eIter = testbuffer.end();
+
+    for ( ; bIter != eIter; bIter += 1) {
+        std::cout << *bIter;
+    }
+
+    auto rbIter = testbuffer.rbegin();
+    auto reIter = testbuffer.rend();
+
+    for ( ; rbIter != reIter; rbIter += 1) {
+        std::cout << *rbIter;
+    }*/
+
+   /* auto printLiquidity = [](Liquidity &bid)
+    {
+        std::cout << std::endl;
+
+        auto ib = bid.begin();
+        auto ie = bid.end();
+
+        for ( ; ie != ib; ib += 1) {
+            std:: cout << *ib << " ";
+        }
+
+        auto bestPrice = bid.getBestLiquidity();
+        std::cout << std::endl;
+        std::cout <<  "BestPrice: " << bestPrice.first << " BestVolume: " << bestPrice.second << " best price changeed: " << bid.isBestChangeWithLastUpdate();
+    };
+
+    BidLiquidity bid(4, 0.01);
+    bid.update(0.04, 4);
+    printLiquidity(bid);
+    bid.update(0.05, 5);
+    printLiquidity(bid);
+    bid.update(0.02, 3);
+    printLiquidity(bid);
+    bid.update(0.01, 1);
+    printLiquidity(bid);
+    bid.update(0.06, 6);
+    printLiquidity(bid);
+    bid.update(0.10, 10);
+    printLiquidity(bid);
+
+    BidLiquidity bidcopy(2, 0.01);
+    bidcopy.init();
+    bid.copyTo(bidcopy);
+    printLiquidity(bidcopy);
+
+    
+    AskLiquidity ask(4, 0.01);
+    ask.update(0.04, 4);
+    printLiquidity(ask);
+    ask.update(0.05, 5);
+    printLiquidity(ask);
+    ask.update(0.06, 6);
+    printLiquidity(ask);
+    ask.update(0.03, 3);
+    printLiquidity(ask);
+    ask.update(0.02, 2);
+    printLiquidity(ask);
+    ask.update(0.01, 1);
+    printLiquidity(ask);
+    ask.update(0.05, 5);
+    printLiquidity(ask);
+
+    AskLiquidity askcopy(2, 0.01);
+    askcopy.init();
+    ask.copyTo(askcopy);
+    printLiquidity(askcopy);*/
+
     return 0;
 }

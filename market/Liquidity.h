@@ -2,8 +2,9 @@
 #define LIQUIDITY_H
 
 #include <cstdint>
-#include "MarketData.h"
 #include <vector>
+#include "MarketData.h"
+#include "CommonUtils.h"
 
 using PriceVolumePair = std::pair<Price,Volume>;
 constexpr Price NoPrice = -1;
@@ -12,6 +13,33 @@ constexpr int NoIndex = -1;
 
 class Liquidity
 {
+public:
+    class Iterator
+    {
+    public:
+        Iterator(Liquidity& liquidity, int currentIndex);
+        void operator+=(int distance);
+        void operator-=(int distance);
+        bool operator==(const Iterator& cmp) const;
+        bool operator!=(const Iterator& cmp) const;
+        Volume& operator*();
+    private:
+        Liquidity& liquidity_;
+        int currentIndex_;
+    };
+    class ReverseIterator
+    {
+    public:
+        ReverseIterator(Liquidity& liquidity, int currentIndex);
+        void operator+=(int distance);
+        void operator-=(int distance);
+        bool operator==(const ReverseIterator& cmp) const;
+        bool operator!=(const ReverseIterator& cmp) const;
+        Volume& operator*();
+    private:
+        Liquidity& liquidity_;
+        int currentIndex_;
+    };
 protected:
     Liquidity(std::size_t size, double tickSize);
 public:
@@ -24,24 +52,24 @@ public:
     bool setTickSize(double tickSize);
     double getTickSize() const { return tickSize_; }
     bool isBestChangeWithLastUpdate() const { return topChanges_; }
-
+    Iterator begin();
+    Iterator end();
+    ReverseIterator rbegin();
+    ReverseIterator rend();
+    Volume operator[](int index) const { return volumes_[(index + startIndex_) & mask_]; }
+    Volume& operator[](int index) { return volumes_[(index + startIndex_) & mask_]; }
 protected:
-    void reset();
-    int getBestLiquidityIndex() const;
     inline Price getPriceFromIndex(int index) const;
     inline int getIndexFromPrice(Price price) const;
-    inline int getDistanceFromReference(Price price) const;
-    int getStartIndex() const { return startIndex_; }
-    int getEndIndex() const { return endIndex_; }
-    int incrementIndex(int i) const { return (i + 1) & mask_; }
-    int decrementIndex(int i) const { return (i - 1) & mask_; }
+    inline int getOffsetFromStartIndex(Price price) const;
 protected:
     std::size_t size_;
-    int mask_;
+    int mask_ = 0;
+    int midOffset_ = 0;
     double tickSize_;
-    Price refPrice_ = NoPrice;
+    Price startIndexPrice_ = NoPrice;
     int startIndex_ = 0;
-    int endIndex_;
+    int endIndex_ = 0;
     std::vector<Volume> volumes_;
     Price bestPrice_ = NoPrice;
     Volume bestVolume_ = NoVolume;
@@ -56,17 +84,18 @@ inline Price Liquidity::getPriceFromIndex(int index) const
     if (offset < 0)
         offset += size_;
 
-    return refPrice_ + offset * tickSize_;     
+    return startIndexPrice_ + offset * tickSize_;     
 }
 
 inline int Liquidity::getIndexFromPrice(Price price) const
 { 
-    return (static_cast<int>((price -refPrice_) / tickSize_) + startIndex_) & mask_;
+    return (getOffsetFromStartIndex(price) + startIndex_) & mask_;
 }
 
-inline int Liquidity::getDistanceFromReference(Price price) const
+inline int Liquidity::getOffsetFromStartIndex(Price price) const
 {
-    return (price - refPrice_)/ tickSize_;
+    auto doubleOffset =  (price - startIndexPrice_)/ tickSize_ ;
+    return doubleOffset < 0 ? doubleOffset - 0.5 : doubleOffset + 0.5;
 }
 
 class BidLiquidity : public Liquidity
@@ -92,41 +121,6 @@ public:
 private:
     bool shiftTowardsHigherPrices(int distance,  Price price, Volume volume);
     void shiftTowardsLowerPrices(int distance,  Price price, Volume volume);
-};
-
-class BidLiquidityIterator
-{
-friend class BidLiquidity;
-public:
-    BidLiquidityIterator(const BidLiquidityIterator &dataIter) = default;
-private:
-    BidLiquidityIterator(const BidLiquidity &liquidity);
-    BidLiquidityIterator& operator=(const BidLiquidityIterator &dataIter) = delete;
-public:
-    PriceVolumePair getNext();
-    void reset();
-    ~BidLiquidityIterator() = default;
-private:
-    const std::vector<Volume> &array_;
-    int currentPos_ = NoIndex;
-    const BidLiquidity &liquidity_;
-};
-
-class AskLiquidityIterator
-{
-public:
-    AskLiquidityIterator(const AskLiquidityIterator &dataIter) = default;
-private:
-    AskLiquidityIterator(const AskLiquidity &liquidity);
-    AskLiquidityIterator& operator=(const AskLiquidityIterator &dataIter) = delete;
-public:
-    PriceVolumePair getNext();
-    void reset();
-    ~AskLiquidityIterator() = default;
-private:
-    const std::vector<Volume> &array_;
-    int currentPos_ = NoIndex;
-    const AskLiquidity &liquidity_;
 };
 
 #endif

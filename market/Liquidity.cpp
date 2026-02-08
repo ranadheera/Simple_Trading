@@ -1,12 +1,10 @@
 #include "Liquidity.h"
 
-
-
 Liquidity::Liquidity(std::size_t size, double tickSize): 
     size_(size), mask_(size - 1), tickSize_(tickSize), endIndex_(size > 0 ? size - 1 : 0), volumes_(0)
 {
     if (!std::has_single_bit(size)) {
-        throw std::invalid_argument("size of Liquidity must be a power of two " + std::to_string(size));
+        throw std::invalid_argument("size of Liquidity must be a power of two ");
     }
 }
 
@@ -14,6 +12,9 @@ bool Liquidity::init()
 { 
     if (!initialized_) {
         volumes_.resize(size_);
+        mask_ = size_ -1;
+        endIndex_ = size_ -1;
+        midOffset_ = size_ / 2;
         initialized_ = true;
         return true;
     }
@@ -30,8 +31,6 @@ bool Liquidity::setSize(std::size_t size)
     }
 
     size_ = size;
-    mask_ = size -1;
-    endIndex_ = size -1;
     return true;
 }
 
@@ -44,23 +43,26 @@ bool Liquidity::setTickSize(double tickSize)
     return true;
 }
 
-void Liquidity::reset()
+Liquidity::Iterator Liquidity::begin()
 {
-    std::fill(volumes_.begin(), volumes_.end(), 0);
-    refPrice_ = NoPrice;
-    bestPrice_ = NoPrice;
-    startIndex_ = 0;
-    endIndex_ = size_ ? size_ - 1 : 0;
-    bestVolume_ = NoVolume;
-    topChanges_ = false;
+    return Iterator(*this, 0);
 }
 
-int Liquidity::getBestLiquidityIndex() const
+Liquidity::Iterator Liquidity::end()
 {
-    if (bestVolume_ != NoVolume)
-        return getIndexFromPrice(bestPrice_);
+    Iterator ei = initialized_ ? Iterator(*this, size_) : Iterator(*this, 0);
+    return ei;
+}
 
-    return NoIndex;
+Liquidity::ReverseIterator Liquidity::rbegin()
+{
+    ReverseIterator rb = initialized_ ? ReverseIterator(*this, size_ -1) : ReverseIterator(*this, -1);
+    return rb;
+}
+
+Liquidity::ReverseIterator Liquidity::rend()
+{
+    return ReverseIterator(*this, -1);
 }
 
 PriceVolumePair Liquidity::getBestLiquidity() const
@@ -80,18 +82,20 @@ void BidLiquidity::shiftTowardsHigherPrices(int distance,  Price price, Volume v
 
     if (numShiftReq < size_) {
 
-        for (int numShift = 0; numShift < numShiftReq; ++numShift) {
-            volumes_[startIndex_] = 0;
-            startIndex_ = incrementIndex(startIndex_) ;
+        for (int numShift = 1; numShift <= numShiftReq; ++numShift) {
+            volumes_[(endIndex_ + numShift) & mask_] = 0;
         }
-        endIndex_ = (startIndex_ + size_ - 1) & mask_;
-        refPrice_ = refPrice_ + (tickSize_ * numShiftReq);
+        startIndex_ = (startIndex_ + numShiftReq) & mask_;
+        endIndex_ = (endIndex_ + numShiftReq) & mask_;
+        startIndexPrice_ = startIndexPrice_ + (tickSize_ * numShiftReq);
         volumes_[endIndex_ ] = volume;
         
     } else {
-        reset();
-        volumes_[startIndex_] = volume;
-        refPrice_ = price;
+        std::fill(volumes_.begin(), volumes_.end(), 0);
+        bestPrice_ = NoPrice;
+        bestVolume_ = NoVolume;
+        volumes_[(startIndex_ + midOffset_) & mask_] = volume;
+        startIndexPrice_ = price - midOffset_ * tickSize_;
     }
 
 }
@@ -100,29 +104,20 @@ bool BidLiquidity::shiftTowardsLowerPrices(int distance,  Price price, Volume vo
 {
     auto numShiftReq = std::min(-distance, static_cast<int>(size_));
 
-    int numShift = 0;
-    int i = endIndex_;
-
-    for ( ; numShift < numShiftReq; ++numShift) {
+    for (int numShift = 0; numShift < numShiftReq; ++numShift) {
         
-        if (volumes_[i] != 0)
+        if (volumes_[(endIndex_ - numShift) & mask_] != 0)
             return false;
-
-        i = decrementIndex(i); 
     }
 
-    if (numShift != size_) {
-        endIndex_ = i;
-        startIndex_ = (endIndex_ +  1) & mask_;
+    if (numShiftReq < size_) {
+        endIndex_ = (endIndex_ - numShiftReq) & mask_;
+        startIndex_ = (startIndex_ - numShiftReq) & mask_;
         volumes_[startIndex_] = volume;
-        refPrice_ = refPrice_ - tickSize_ * numShift;
+        startIndexPrice_ = startIndexPrice_ - tickSize_ * numShiftReq;
     } else {
-        startIndex_ = 0;
-        endIndex_ = size_ -1;
-        volumes_[startIndex_] = volume;
-        refPrice_ = price;
-        bestPrice_ = price;
-        bestVolume_ = volume; 
+        volumes_[(startIndex_ + midOffset_) & mask_] = volume;
+        startIndexPrice_ = price - midOffset_ * tickSize_;
     }
 
     return true;
@@ -132,22 +127,22 @@ bool BidLiquidity::update(Price price, Volume volume)
 {
     topChanges_ = false;
 
-    if (refPrice_ == NoPrice) {
+    if (startIndexPrice_ == NoPrice) {
         init();
-        refPrice_ = price;
+        startIndexPrice_ = price - midOffset_ * tickSize_;
     }
 
-    int distance = getDistanceFromReference(price);
+    int distance = getOffsetFromStartIndex(price);
 
     bool volumeAdded =  true;
 
     if (distance >= 0 && distance < size_) {
         int index =  (distance + startIndex_) & mask_;
         volumes_[index] = volume;
-    } else if (distance >= size_) {
-        shiftTowardsHigherPrices(distance, price, volume);
-    } else {
+    } else if (distance < 0) {
         volumeAdded = shiftTowardsLowerPrices(distance, price, volume);
+    } else {
+        shiftTowardsHigherPrices(distance, price, volume);
     }
 
     if (!volumeAdded)
@@ -175,7 +170,7 @@ bool BidLiquidity::update(Price price, Volume volume)
                 break;
             }
 
-            i = decrementIndex(i);
+            i = (i - 1) & mask_;
         }
     }
 
@@ -184,29 +179,30 @@ bool BidLiquidity::update(Price price, Volume volume)
 
 void BidLiquidity::copyTo(BidLiquidity &liquidity) const
 {
-    liquidity.reset();
-    auto size = liquidity.getSize();
+    std::fill(liquidity.volumes_.begin(), liquidity.volumes_.end(), 0);
+    liquidity.startIndexPrice_ = NoPrice;
+    liquidity.startIndex_ = 0;
+    liquidity.endIndex_ = liquidity.size_ ? liquidity.size_ - 1 : 0;
+    liquidity.topChanges_ = false;
     liquidity.tickSize_ = tickSize_;
 
-    auto topIndex   = getBestLiquidityIndex();
+    liquidity.bestPrice_ = bestPrice_;
+    liquidity.bestVolume_ = bestVolume_;
 
-    if (topIndex == NoIndex)
+    if (bestPrice_ == NoPrice)
         return;
 
-    auto topLiquidity = getBestLiquidity();
-    liquidity.bestPrice_ = topLiquidity.first;
-    liquidity.bestVolume_ = topLiquidity.second;
-    liquidity.refPrice_ = liquidity.bestPrice_ - (liquidity.tickSize_ *  (liquidity.getSize() - 1));
+    auto size = liquidity.size_;
+    liquidity.startIndexPrice_ = liquidity.bestPrice_ - (liquidity.tickSize_ *  (size - 1));
+    auto topIndex   = getIndexFromPrice(bestPrice_);
 
-    for (int i = topIndex, j = size -1; ; i = decrementIndex(i), --j) {
-
+    for (int i = topIndex, j = size -1;  ; i = (i-1) & mask_, --j) {
         liquidity.volumes_[j] = volumes_[i];
 
-        if (i != getStartIndex() && j > 0)
-            continue;
-        else
+        if ((i == startIndex_) || (j == 0))
             break;
     }
+    liquidity.topChanges_ = true;
 }
 
 AskLiquidity::AskLiquidity(std::size_t size, double tickSize) : Liquidity(size, tickSize)
@@ -219,28 +215,23 @@ bool AskLiquidity::shiftTowardsHigherPrices(int distance,  Price price, Volume v
     auto numShiftReq = std::min(distance - static_cast<int>(size_) + 1, static_cast<int>(size_));
 
     int numShift = 0;
-    int i = startIndex_;
 
-    for ( ; numShift < numShiftReq; ++numShift) {
+    for (int i = startIndex_; numShift < numShiftReq; ++numShift) {
         
         if (volumes_[i] != 0)
             return false;
 
-        i = incrementIndex(i); 
+        i = (i + 1) & mask_;
     }
 
-    if (numShift != size_) {
-        startIndex_ = i;
-        endIndex_ = (startIndex_ +  size_ -1) & mask_;
+    if (numShift < size_) {
+        startIndex_ = (startIndex_ + numShiftReq) & mask_;
+        endIndex_ = (endIndex_ + numShiftReq) & mask_;
         volumes_[endIndex_] = volume;
-        refPrice_ = refPrice_ + tickSize_ * numShift;
+        startIndexPrice_ = startIndexPrice_ + tickSize_ * numShift;
     } else {
-        startIndex_ = 0;
-        endIndex_ = size_ -1;
-        volumes_[startIndex_] = volume;
-        refPrice_ = price;
-        bestPrice_ = price;
-        bestVolume_ = volume; 
+        volumes_[(startIndex_ + midOffset_) & mask_] = volume;
+        startIndexPrice_ = price - midOffset_ * tickSize_;
     }
 
     return true;
@@ -252,38 +243,42 @@ void AskLiquidity::shiftTowardsLowerPrices(int distance,  Price price, Volume vo
     int totalShifts = 0;
 
     if (numShiftReq < size_) {
-        for (int numShift = 0; numShift < numShiftReq; ++numShift) {
-            volumes_[endIndex_] = 0;
-            endIndex_ = decrementIndex(endIndex_); 
+        for (int numShift = 1; numShift <= numShiftReq; ++numShift) {
+            volumes_[(startIndex_ - numShift) & mask_] = 0;
         }
 
-        startIndex_ = (endIndex_  +  1) & mask_;
-        refPrice_ = refPrice_ - (tickSize_ * numShiftReq);
+        startIndex_ = (startIndex_ - numShiftReq) & mask_;
+        endIndex_ = (endIndex_ - numShiftReq) & mask_;
+        startIndexPrice_ = startIndexPrice_ - (tickSize_ * numShiftReq);
         volumes_[startIndex_] = volume; 
     } else {
-        reset();
-        volumes_[startIndex_] = volume;
-        refPrice_ = price;
+        std::fill(volumes_.begin(), volumes_.end(), 0);
+        bestPrice_ = NoPrice;
+        bestVolume_ = NoVolume;
+        volumes_[(startIndex_ + midOffset_) & mask_] = volume;
+        startIndexPrice_ = price - midOffset_ * tickSize_;
     }
 }
 
 bool AskLiquidity::update(Price price, Volume volume)
 {
-   if (refPrice_ == NoPrice) {
+    topChanges_ = false;
+
+    if (startIndexPrice_ == NoPrice) {
         init();
-        refPrice_ = price;
+        startIndexPrice_ = price - midOffset_ * tickSize_;
     }
 
-    int distance = getDistanceFromReference(price);
+    int distance = getOffsetFromStartIndex(price);
     bool volumeAdded = true;
 
     if (distance >= 0 && distance < size_) {
         int index =  (distance + startIndex_) & mask_;
         volumes_[index] = volume;
-    } else if (distance >= size_) {
-        volumeAdded = shiftTowardsHigherPrices(distance, price, volume);
-    } else {
+    } else if (distance < 0) {
         shiftTowardsLowerPrices(distance, price, volume);
+    } else {
+        volumeAdded = shiftTowardsHigherPrices(distance, price, volume);
     }
 
     if (!volumeAdded)
@@ -310,7 +305,7 @@ bool AskLiquidity::update(Price price, Volume volume)
                 bestVolume_ = volumes_[i];
                 break;
             }
-            i = decrementIndex(i);
+            i = (i + 1) & mask_;
         }
     }
 
@@ -319,79 +314,90 @@ bool AskLiquidity::update(Price price, Volume volume)
 
 void AskLiquidity::copyTo(AskLiquidity &liquidity) const
 {
-    liquidity.reset();
+    std::fill(liquidity.volumes_.begin(), liquidity.volumes_.end(), 0);
+    liquidity.startIndexPrice_ = NoPrice;
+    liquidity.startIndex_ = 0;
+    liquidity.endIndex_ = liquidity.size_ ? liquidity.size_ - 1 : 0;
+    liquidity.topChanges_ = false;
     liquidity.tickSize_ = tickSize_;
-    auto size = liquidity.getSize();
-    
-    auto topIndex   = getBestLiquidityIndex();
 
-    if (topIndex == NoIndex)
+    liquidity.bestPrice_ = bestPrice_;
+    liquidity.bestVolume_ = bestVolume_;
+
+    if (bestPrice_ == NoPrice)
         return;
 
-    auto topLiquidity = getBestLiquidity();
-    liquidity.refPrice_ = topLiquidity.first;
-    liquidity.bestPrice_ = liquidity.refPrice_;
-    liquidity.bestVolume_ = topLiquidity.second;
+    auto topIndex   = getIndexFromPrice(bestPrice_);
+    liquidity.startIndexPrice_ = liquidity.bestPrice_;
 
-    for (int i = topIndex, j = 0; ; i = incrementIndex(i), ++j) {
+
+    for (int i = topIndex, j = 0; ; i = (i + 1) & mask_, ++j) {
 
         liquidity.volumes_[j] = volumes_[i];
 
-        if (i != getEndIndex() && j < liquidity.getSize() - 1)
-            continue;
-        else
+        if (i == endIndex_ || j == liquidity.getSize() - 1)
             break;
     }
+
+    liquidity.topChanges_ = true;
 }
 
-BidLiquidityIterator::BidLiquidityIterator(const BidLiquidity &liquidity): array_(liquidity.volumes_), liquidity_(liquidity)
+Liquidity::Iterator::Iterator(Liquidity& liquidity, int currentIndex) : liquidity_(liquidity), currentIndex_(currentIndex)
 {
-    currentPos_ = liquidity_.getBestLiquidityIndex();
+
 }
 
-PriceVolumePair BidLiquidityIterator::getNext()
+void Liquidity::Iterator::operator+=(int distance)
 {
-    if (currentPos_ == NoIndex)
-        return PriceVolumePair(NoPrice,NoVolume);
-
-    auto price = liquidity_.getPriceFromIndex(currentPos_);
-    auto volume = array_[currentPos_];
-
-    if (currentPos_ == liquidity_.getStartIndex()) {
-        currentPos_  = NoIndex;
-    } else {
-        currentPos_  = liquidity_.decrementIndex(currentPos_);
-    }
-    return std::make_pair(price, volume);
+    currentIndex_ += distance;
 }
 
-void BidLiquidityIterator::reset()
+void Liquidity::Iterator::operator-=(int distance)
 {
-    currentPos_ = liquidity_.getBestLiquidityIndex();
+    currentIndex_ -= distance;
 }
 
-AskLiquidityIterator::AskLiquidityIterator(const AskLiquidity &liquidity): array_(liquidity.volumes_), liquidity_(liquidity)
+Volume& Liquidity::Iterator::operator*()
 {
-    currentPos_ = liquidity_.getBestLiquidityIndex();
+    return liquidity_[currentIndex_];
 }
 
-PriceVolumePair AskLiquidityIterator::getNext()
+bool Liquidity::Iterator::operator==(const Iterator& cmp) const
 {
-    if (currentPos_  == NoIndex)
-        return PriceVolumePair(NoPrice, NoVolume);
-
-    auto price = liquidity_.getPriceFromIndex(currentPos_);
-    auto volume = array_[currentPos_];
-    
-    if (currentPos_ == liquidity_.getEndIndex()) {
-        currentPos_ = NoIndex;
-    } else {
-        currentPos_ = liquidity_.incrementIndex(currentPos_);
-    }
-    return std::make_pair(price, volume);
+    return ((&liquidity_ == &cmp.liquidity_) && (currentIndex_ == cmp.currentIndex_));
 }
 
-void AskLiquidityIterator::reset()
+bool Liquidity::Iterator::operator!=(const Iterator& cmp) const
 {
-    currentPos_ = liquidity_.getBestLiquidityIndex();
+    return !(*this == cmp);
+}
+
+Liquidity::ReverseIterator::ReverseIterator(Liquidity& liquidity, int currentIndex) : liquidity_(liquidity), currentIndex_()
+{
+
+}
+
+void Liquidity::ReverseIterator::operator+=(int distance)
+{
+    currentIndex_ -= distance;
+}
+
+void Liquidity::ReverseIterator::operator-=(int distance)
+{
+    currentIndex_ += distance;
+}
+
+Volume& Liquidity::ReverseIterator::operator*()
+{
+    return liquidity_[currentIndex_];
+}
+
+bool Liquidity::ReverseIterator::operator==(const ReverseIterator& cmp) const
+{
+    return ((&liquidity_ == &cmp.liquidity_) && (currentIndex_ == cmp.currentIndex_));
+}
+
+bool Liquidity::ReverseIterator::operator!=(const ReverseIterator& cmp) const
+{
+    return !(*this == cmp);
 }

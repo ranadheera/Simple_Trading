@@ -1,7 +1,7 @@
 #ifndef DISPATCHER_H
-#define DISATCHER_H
+#define DISPATCHER_H
 
-#include "RingBuffer.h"
+#include "SWSRRingBuffer.h"
 #include "Buffer.h"
 #include "Updaters.h"
 #include "MarketTick.h"

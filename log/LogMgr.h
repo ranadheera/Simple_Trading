@@ -7,7 +7,7 @@
 #include <thread>
 #include <memory>
 #include <type_traits>
-#include "RingBuffer.h"
+#include "MWMRNoOverWriteSlotRingBuffer.h"
 #include "LogMessage.h"
 #include "MessageReader.h"
 
@@ -105,7 +105,7 @@ private:
     std::vector<std::unique_ptr<MessageReader>> messageReaderList_;
     std::string logDirectory_;
     std::size_t msgQueueSize_ = 320;
-    MWMRNonOverridableSlotRingBuffer<std::pair<LogFileType,LogMessage>> messageQueue_;
+    MWMRNoOverWriteSlotRingBuffer<std::pair<LogFileType,LogMessage>> messageQueue_;
     std::jthread writerThread_;
     std::atomic<std::size_t> logCount_;               
     bool stop_ = false;

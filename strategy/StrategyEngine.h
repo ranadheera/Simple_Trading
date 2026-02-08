@@ -4,9 +4,11 @@
 #include "MarketData.h"
 #include "MarketTick.h"
 #include "Buffer.h"
+#include "SWSRRingBuffer.h"
 #include <vector>
 #include <functional>
 #include <thread>
+
 
 class  MeanReversionNumData {
 public:

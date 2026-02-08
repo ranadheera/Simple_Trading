@@ -1,7 +1,6 @@
 #ifndef BUFFER_H
 #define BUFFER_H
 
-#include "RingBuffer.h"
 #include "MarketData.h"
 #include <atomic>
 #include <vector>

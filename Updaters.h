@@ -1,9 +1,10 @@
 #ifndef UPDATERS_H
 #define UPDATERS_H
 
-#include "Buffer.h"
+#include "SWSRRingBuffer.h"
 #include "MarketData.h"
 #include "L2Book.h"
+#include <thread>
 
 using MarketDataBuffer = SWSRRingBuffer<Marketdata>;
 class Updater;
