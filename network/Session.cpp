@@ -3,8 +3,8 @@
 #include <chrono>
 #include <cstring>
 
-Session::Session(const std::string host, int port, Connection::IpvType ipvType, std::size_t outueSize, std::size_t sentQueueSize):
-    conn_(host, port, ipvType), outQueue_(outueSize), sentQueue_(sentQueueSize)
+Session::Session(std::string_view host, int port, Connection::IpvType ipvType, std::size_t outueSize, std::size_t sentQueueSize, std::size_t bufferInSize):
+    conn_(host, port, ipvType), outQueue_(outueSize), sentQueue_(sentQueueSize), bufferIn_(bufferInSize)
 {
 
 }
@@ -73,7 +73,13 @@ bool Session::finalizeMessage(OutMessage &message)
     auto msgLenPtr = message.buffer_.data() + message.msgLenPos_+ 2;
     memcpy(msgLenPtr,msgLength,4);
 
-    auto checksum = message.dataSize_ % 256;
+    int checksum = 0;
+
+    for (std::size_t i = 0; i <  message.dataSize_; ++i) {
+        checksum = static_cast<unsigned char>(message.buffer_[i]);
+    }
+
+    checksum = checksum % 256;
 
     retVal = message.addTagValue(FixTags::CheckSum, checksum);
 
@@ -112,9 +118,12 @@ template<typename T> bool Session::sendMessage(const T& messageBuilder)
 
 bool Session::startSession()
 {
-    run_ = true;
+    bool connected = conn_.connect();
 
     while (run_) {
 
     }
+
+    started_ = true;
+    return true;
 }

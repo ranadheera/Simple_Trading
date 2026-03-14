@@ -8,7 +8,7 @@
 #include "ParsedFixMessage.h"
 #include "Events.h"
 
-class L1Book
+/*class L1Book
 {
 public:
     L1Book() = default;
@@ -34,12 +34,12 @@ private:
     Volume bestAskVolume_ = 0;
     Trade lastTrade_;
     TimeStamp time_ = 0;
-};
+};*/
 
 class SymbolMarketState
 {
 public:
-    SymbolMarketState(std::size_t tradeSize = 512, std::size_t l2BookSize = 50, double l2BookTickSize = 0.01);
+    SymbolMarketState(std::size_t tradeSize = 512, std::size_t l2BookSize = 2048, double l2BookTickSize = 0.01);
 
 public:
     bool setL2BookSize(std::size_t size) { return l2Book_.setSize(size); }
@@ -47,32 +47,24 @@ public:
     bool setTradeSize(std::size_t size); 
     bool init();
     const L2Book& getL2Book() const { return l2Book_; }
-    const L1Book& getL1Book() const { return l1Book_; }
-    const std::vector<Trade> getTrades() const { return trades_; }
+  //  const L1Book& getL1Book() const { return l1Book_; }
+    const std::vector<FixMarketUpdate> getTrades() const { return trades_; }
+    const FixMarketUpdate& getTrade(std::size_t seqNo) const { return trades_[seqNo % tradeSize_]; }
     std::size_t getTradeSeuence() const { return tradeSeqNo_.load(std::memory_order_acquire); }
     std::size_t getUpdateCount() const { return updateCount_.load(std::memory_order_acquire);}
-    bool update(const std::vector<Marketdata> &marketdata,  const std::vector<Trade> &trades);
+    bool update(const std::vector<FixMarketUpdate> &marketdata);
 private:
-    bool update(const Marketdata &data);
-    void update(const Trade &data);
+    bool updateBook(const FixMarketUpdate &data);
+    void updateTrade(const FixMarketUpdate &data);
 private:
     std::size_t tradeSize_;
     std::atomic<std::size_t> tradeSeqNo_;
     std::atomic<std::size_t> updateCount_;
-    std::vector<Trade> trades_;
+    std::vector<FixMarketUpdate> trades_;
     L2Book l2Book_;
-    L1Book l1Book_;
+   // L1Book l1Book_;
     bool initialized_ = false;
 
-};
-
-class MarketChangeEvent : public EventBase
-{
-public:
-    MarketChangeEvent(SymbolID symbolID) : EventBase(EventType::MARKET_CHANGE), symbolID_(symbolID) {}
-    SymbolID getSymbolID() { return symbolID_; }
-private:
-    SymbolID symbolID_;
 };
 
 class MarketState
@@ -80,15 +72,27 @@ class MarketState
 public:
     MarketState(std::size_t symbolCount) : symbolMarketStates_(symbolCount), symbolChangeStatus_(symbolCount, false) {}
 public:
-    SymbolMarketState& getSymbolMarketState(std::size_t symbolId) { return symbolMarketStates_[symbolId]; }
+    const SymbolMarketState& getSymbolMarketState (std::size_t symbolId) const { return symbolMarketStates_[symbolId]; }
     void update(const ParsedFixMarketData& fixMarketData);
-    void registerForMarketChanges(const Subscriber& subscriber) { marketChangeSubscribers_.push_back(subscriber); }
+    void registerForMarketChanges(const Subscriber& subscriber) const { marketChangeSubscribers_.push_back(subscriber); }
     bool init();
 private:
     std::vector<SymbolMarketState> symbolMarketStates_;
     std::vector<char> symbolChangeStatus_;
-    std::list<Subscriber> marketChangeSubscribers_;
+    mutable std::list<Subscriber> marketChangeSubscribers_;
     bool initiaLized_ = false;
+};
+
+class MarketChangeEvent : public EventBase
+{
+public:
+    MarketChangeEvent(SymbolID symbolID, const MarketState* marketState) : EventBase(EventType::MARKET_CHANGE), symbolID_(symbolID), marketState_(marketState) {}
+    MarketChangeEvent() : MarketChangeEvent(NoSymbolID, nullptr){}
+    SymbolID getSymbolID() const { return symbolID_; }
+    const MarketState* getMarketState() const { return marketState_; }
+private:
+    SymbolID symbolID_;
+    const MarketState* marketState_;
 };
 
 #endif

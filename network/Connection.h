@@ -6,20 +6,31 @@
 
 using socketfd = int;
 
+class ConnectionID
+{
+public:
+    ConnectionID(std::string_view hostName, int port): hostName_(hostName), port_(port) {}
+    std::string_view getHostName() { return hostName_;}
+    int getPort() { return port_; }
+private:
+    std::string hostName_;
+    int port_;
+};
+
 class Connection {
 public:
     enum class Status {CONNECTED, NOTCONNECTED, CLOSED};
     enum class IpvType {IPV4, IPV6};
 public:
-    Connection(const std::string &host, int port, IpvType ipvType = IpvType::IPV4);
+    Connection(std::string_view host, int port, IpvType ipvType = IpvType::IPV4);
     ~Connection();
     bool connect();
     int send(const char *message, int length);
     int receive(char *message, int length);
     void disconnect();
+    const ConnectionID& getID() const { return connId_; }
 private:
-    std::string host_;
-    int port_;
+    ConnectionID connId_;
     IpvType ipvType_;
     Status status_ = Status::NOTCONNECTED;
     socketfd fd_ = -1;

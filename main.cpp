@@ -14,7 +14,7 @@
 #include "StrategyEngine.h"
 #include "LogMgr.h"
 #include "FastRingBuffer.h"
-
+#include "MessageParser.h"
 
 int main() {
 
@@ -211,5 +211,42 @@ int main() {
     ask.copyTo(askcopy);
     printLiquidity(askcopy);*/
 
+    /*char array[] = "8=FIX.4.4\x01"
+                   "9=5\x01"
+                   "35=0\x01"
+                   "10=161\x01";*/
+
+    /* char array[] = "8=FIX.4.4\x01"
+                   "9=147\x01"
+                   "35=X\x01"
+                   "34=102\x01"
+                   "49=EXCHANGE\x01"
+                   "56=CLIENT\x01"
+                   "52=20260310-09:30:15.123\x01"
+                   "268=2\x01"
+                   "279=0\x01"
+                   "269=0\x01"
+                   "55=AAPL\x01"
+                   "270=190.40\x01"
+                   "271=500\x01"
+                   "290=1\x01"
+                   "279=0\x01"
+                   "269=2\x01"
+                   "55=AAPL\x01"
+                   "31=190.40\x01"
+                   "32=100\x01"
+                   "10=226\x01";
+    TradeSymbols symbols;
+    symbols.addSymbol("AAPL");
+    MessageParser parser(symbols, 256);
+    parser.append(array, 171);
+    auto &st = parser.parse();
+
+    if (st.getType() == ParseStatus::Type::SUCCESS) {
+        auto &success = static_cast<const ParseSuccess&>(st);
+        auto &msg = success.getMessage();
+        auto &fixUpdate = static_cast<const ParsedFixMarketData&>(msg);
+        std::cout << fixUpdate;
+    }*/
     return 0;
 }

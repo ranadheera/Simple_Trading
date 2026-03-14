@@ -35,7 +35,7 @@ void BookUpdaters::stop()
 }
 
 
-void BookUpdaters::sendToUpdater(const Marketdata& data)
+void BookUpdaters::sendToUpdater(const FixMarketUpdate& data)
 {
     auto updaterID = data.getSymbolID() % updaters_.size();
     auto updater = updaters_[updaterID];

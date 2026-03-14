@@ -28,25 +28,22 @@ bool L2Book::init()
     return st;
 }
 
-bool L2Book::update(const Marketdata &data) {
+bool L2Book::update(const FixMarketUpdate &data) {
 
     bool updateSuccess = false;
 
-    if (data.getAskPrice() > 0)  {
-        updateSuccess = askLiquidity_.update(data.getAskPrice(), data.getAskVolume());
+    if (data.getEntryType() == EntryType::OFFER)  {
+        updateSuccess = askLiquidity_.update(data.getPrice(), data.getVolume());
+    } else {
+        updateSuccess |= bidLiquidity_.update(data.getPrice(), data.getVolume());
     }
-
-    if (data.getBidPrice() > 0) {
-        updateSuccess |= bidLiquidity_.update(data.getBidPrice(), data.getBidVolume());
-    }
-
-    if (updateSuccess)
-        lastUpdatedTime_ = data.getTimeStamp();
+    
+    lastUpdatedTime_ = data.getTimeStamp();
 
     return updateSuccess;
 }
 
-void L2Book::getSnapShot(L2Book &l2Book) const
+void L2Book::copyTo(L2Book &l2Book) const
 {
     bidLiquidity_.copyTo(l2Book.bidLiquidity_);
     askLiquidity_.copyTo(l2Book.askLiquidity_);

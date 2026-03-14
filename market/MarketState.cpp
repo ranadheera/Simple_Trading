@@ -8,19 +8,21 @@ SymbolMarketState::SymbolMarketState(std::size_t tradeSize, std::size_t l2BookSi
     updateCount_.store(0, std::memory_order_release);
 }
 
-bool SymbolMarketState::update(const std::vector<Marketdata> &marketdata,  const std::vector<Trade> &trades)
+bool SymbolMarketState::update(const std::vector<FixMarketUpdate> &marketdata)
 {
     updateCount_.fetch_add(1, std::memory_order_acq_rel);
-    bool updated = false;
 
     for (auto &data : marketdata) {
-        updated |= update(data);
+        if (data.getEntryType() == EntryType::BID || data.getEntryType() == EntryType::OFFER )
+            updateBook(data);
+        else
+            updateTrade(data);
     }
 
-    for (auto &trade: trades) {
-        update(trade);
-        updated = true;
-    }
+    //for (auto &trade: trades) {
+       // update(trade);
+       // updated = true;
+   // }
     
     updateCount_.fetch_add(1, std::memory_order_acq_rel);
     return true;
@@ -28,34 +30,29 @@ bool SymbolMarketState::update(const std::vector<Marketdata> &marketdata,  const
 }
 
 
-bool SymbolMarketState::update(const Marketdata &data)
+bool SymbolMarketState::updateBook(const FixMarketUpdate &data)
 {
-    auto updated =  l2Book_.update(data);
+    l2Book_.update(data);
+    auto topAsk = l2Book_.getMinAskPriceVolume();
+    //l1Book_.setBestAskPrice(topAsk.first);
+    //l1Book_.setBestAskVolume(topAsk.second);
 
-    if (!updated)
-        return updated;
-
-    if (l2Book_.isBestAskChangeWithLastUpdate()) {
-
-        l1Book_.setUpdatedTime(data.getTimeStamp());
-        auto topAsk = l2Book_.getMinAskPriceVolume();
-        l1Book_.setBestAskPrice(topAsk.first);
-        l1Book_.setBestAskVolume(topAsk.second);
-    }
+    //if (l1Book_.getTime() < data.getTimeStamp())
+      //  l1Book_.setUpdatedTime(data.getTimeStamp());
 
     return true;
 }
 
-void SymbolMarketState::update(const Trade &data)
+void SymbolMarketState::updateTrade(const FixMarketUpdate &data)
 {
     auto seqNo = tradeSeqNo_.load(std::memory_order_acquire);
     auto indexNo = seqNo % tradeSize_;
     trades_[indexNo] = data;
     tradeSeqNo_.fetch_add(1, std::memory_order_acq_rel);
+   // l1Book_.setLastTrade(data);
 
-    l1Book_.setLastTrade(data);
-    l1Book_.setUpdatedTime(data.getTimeStamp());
-
+   // if (l1Book_.getTime() < data.getTimeStamp())
+     //   l1Book_.setUpdatedTime(data.getTimeStamp());
 }
 
 bool SymbolMarketState::setTradeSize(std::size_t size)
@@ -97,10 +94,9 @@ void MarketState::update(const ParsedFixMarketData& fixMarketData)
     for (auto i = 0; i < symbolCount; ++i) {
         auto &symbolMarketData = fixMarketData.getFixMarketData(i);
         auto &marketdata = symbolMarketData.getMarketData();
-        auto &trade = symbolMarketData.getTrades();
 
-        if (marketdata.size() || trade.size())
-            symbolChangeStatus_[i] = symbolMarketStates_[i].update(marketdata, trade);
+        if (marketdata.size())
+            symbolChangeStatus_[i] = symbolMarketStates_[i].update(marketdata);
         else
             symbolChangeStatus_[i] = false;
     }
@@ -108,7 +104,7 @@ void MarketState::update(const ParsedFixMarketData& fixMarketData)
     for (auto i = 0; i < symbolCount; ++i) {
         if (symbolChangeStatus_[i]) {
             for (auto &subscriber : marketChangeSubscribers_) {
-                subscriber.notify(MarketChangeEvent(i));
+                subscriber.notify(MarketChangeEvent(i, this));
             }
         }
     }

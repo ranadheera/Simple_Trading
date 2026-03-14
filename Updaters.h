@@ -6,7 +6,7 @@
 #include "L2Book.h"
 #include <thread>
 
-using MarketDataBuffer = SWSRRingBuffer<Marketdata>;
+using MarketDataBuffer = SWSRRingBuffer<FixMarketUpdate>;
 class Updater;
 
 class BookUpdaters
@@ -19,7 +19,7 @@ public:
     void stop();
     inline Updater* getUpdater(std::size_t index) { return updaters_[index]; }
     auto getNumUpdaters() { return updaters_.size(); }
-    void sendToUpdater(const Marketdata& data);
+    void sendToUpdater(const FixMarketUpdate& data);
 private:
     L2Book &l2book_;
     std::vector<Updater*> updaters_;
@@ -33,10 +33,10 @@ class Updater
 public:
     Updater(BookUpdaters &bookUpdaters, L2Book &l2book, std::size_t size) : bookUpdaters_(bookUpdaters), buffer_(size), l2book_(l2book) {}
 public:
-    void addData(const Marketdata& data) { buffer_.write(data); }
+    void addData(const FixMarketUpdate& data) { buffer_.write(data); }
     void setStopFlag() { runFlag_ = false; }
     void exec() {
-        Marketdata t;
+        FixMarketUpdate t;
         while (runFlag_ || !buffer_.empty()) {
             if (buffer_.read(t)) {
                 l2book_.update(t);

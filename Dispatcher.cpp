@@ -18,13 +18,13 @@ void Dispatcher::stop()
 
 void Dispatcher::exec()
 {
-    Marketdata data;
+    FixMarketUpdate data;
     while (runFlag_ || !ringBuffer_.empty()) {
         if (ringBuffer_.read(data)) {
-            if (marketTick_.update(getIndex(data), data)) {
-                bookupdatrs_.sendToUpdater(data);
-                strategyEngine_.update(data.getSymbolID());
-            }
+           // if (marketTick_.update(data.getSymbolID(), data)) {
+               // bookupdatrs_.sendToUpdater(data);
+                //strategyEngine_.update(data.getSymbolID());
+            //}
         }
     }
 }

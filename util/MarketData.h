@@ -6,9 +6,9 @@
 
 using Price = double;
 using Volume = int;
-using TimeStamp = uint64_t;
+using TimeStamp = unsigned long long;
 using SymbolID = int;
-
+constexpr SymbolID NoSymbolID = -1;
 
 class Marketdata {
 friend inline std::ostream& operator<<(std::ostream& os, const Marketdata& mt);

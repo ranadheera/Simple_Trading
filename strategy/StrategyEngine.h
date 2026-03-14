@@ -1,72 +1,57 @@
 #ifndef STRATEGY_ENGINE_H
 #define STRATEGY_ENGINE_H
 
-#include "MarketData.h"
-#include "MarketTick.h"
-#include "Buffer.h"
-#include "SWSRRingBuffer.h"
 #include <vector>
-#include <functional>
 #include <thread>
+#include "Events.h"
+#include "SWSRRingBuffer.h"
+#include "MarketState.h"
 
+using StrategyResolveFunction = void(*) (void*, const MarketChangeEvent& event);
+using StrategyDeleteFunction = void(*)(void*);
 
-class  MeanReversionNumData {
-public:
-    MeanReversionNumData(std::size_t size, std::size_t );
-    void handleMarketData(const Marketdata &data);
-    static void onMarketData(void *strategy, const Marketdata &data);
-    static void destroy(void *strategy);
-private:
-    std::size_t count_ = 0;
-    std::size_t writeIndex_ = 0;
-    std::size_t volume_;
-    double totVal_ = 0;
-    std::vector<Marketdata> array_;
-
-};
-
-struct StrategyWrapper {
-    void* strategy_ = 0;
-    std::function<void(void*, const Marketdata&)> execFunc_;
-    std::function<void(void*)> deleter_;
-};
-
-using SymbolIdBuffer = SWSRRingBuffer<int>;
-class StrategyExecuter;
-
-class StrategyEngine {
-friend StrategyExecuter;
-public:
-    StrategyEngine(MarketTick &marketTick_, std::size_t numSymbols, std::size_t threads);
-    ~StrategyEngine();
-    void update(int marketTickIndex);
-    void start();
-    void stop();
-    StrategyWrapper* getStrategyWrapper(int symbolId);
-private:
-    void addStrategy(int symbolId, const StrategyWrapper &wrapper);
-private:
-    MarketTick &marketTick_;
-    std::vector<StrategyWrapper> strategies_;
-    std::vector<StrategyExecuter*> executers_;
-    std::vector<std::thread> execThreads_;
-    std::atomic<int> activeThreadCount_;
-};
-
-class StrategyExecuter
+template<typename T> void strategyResolve(void *strategyPtr, const MarketChangeEvent& event)
 {
+    T* strategy = static_cast<T*>(strategyPtr);
+    strategy->handleEvent(event); 
+}
 
+template<typename T> void strategyDelete(void *strategyPtr)
+{
+    T* strategy = static_cast<T*>(strategyPtr);
+    delete strategy; 
+}
+
+class StrategyWrapper
+{
 public:
-    StrategyExecuter(StrategyEngine &engine, MarketTick &marketTick, std::size_t size);
+    StrategyWrapper() = default;
+    StrategyWrapper(StrategyResolveFunction callFn, StrategyDeleteFunction deleteFn, void* strategyPtr) : callFn_(callFn), deleteFn_(deleteFn), strategyPtr_(strategyPtr) {}
+    ~StrategyWrapper() { deleteFn_(strategyPtr_); }
 public:
-    void addSymbolID(int id) { buffer_.write(id); }
-    void exec();
-    void setStop() {runFlag_ = false;}
-private:
-    StrategyEngine &engine_;
-    MarketTick &marketTick_;
-    SymbolIdBuffer buffer_;
-    bool runFlag_ = true;
+    StrategyResolveFunction callFn_ = nullptr;
+    StrategyDeleteFunction deleteFn_ = nullptr;
+    void* strategyPtr_ = nullptr;
 };
+
+class StrategyEngine
+{
+public:
+    StrategyEngine(std::size_t numSymbols, std::size_t eventBufferSize);
+    void addMarket(MarketState &market);
+    void setStrategy(SymbolID id, StrategyWrapper strategy) { strategies_[id] = strategy; }
+    void notify(const EventBase& event);
+    bool start();
+    void stop();
+private:
+    void exec();
+private:
+    std::vector<StrategyWrapper> strategies_;
+    SWSRRingBuffer<MarketChangeEvent> marketEvents_;
+    bool run_ = true;
+    std::jthread strategyThread_; 
+};
+
+
 
 #endif

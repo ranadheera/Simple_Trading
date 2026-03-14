@@ -2,6 +2,10 @@
 #define COMMON_UTILS_H
 
 #include <cstdint>
+#include <map>
+#include <vector>
+#include <string>
+#include <MarketData.h>
 
 inline std::size_t getNextPowerOfTwo(std::size_t number)
 {
@@ -16,6 +20,29 @@ inline std::size_t getNextPowerOfTwo(std::size_t number)
     number |= number >> 16;
     number |= number >> 32;
     return number + 1;
+}
+
+class TradeSymbols
+{
+public:
+    TradeSymbols() = default;
+    SymbolID addSymbol(std::string_view symbolName);
+    std::size_t getNumSymbols() const { return symbolIdvsName_.size(); }
+    std::string_view getSymbolName (SymbolID id) const { return symbolIdvsName_[id]; }
+    inline SymbolID getSymbolID (const std::string &name) const;
+private:
+    std::map<std::string,SymbolID> symbolNameVsIDs_;
+    std::vector<std::string> symbolIdvsName_;
+};
+
+SymbolID TradeSymbols::getSymbolID(const std::string &name) const
+{
+    auto iter = symbolNameVsIDs_.find(name);
+
+    if (iter != symbolNameVsIDs_.end())
+        return iter->second;
+
+    return -1;
 }
 
 #endif

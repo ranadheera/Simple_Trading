@@ -7,7 +7,7 @@
 #include <unistd.h>
 #include <memory>
  
-Connection::Connection(const std::string &host, int port, IpvType ipvType) : host_(host), port_(port), ipvType_(ipvType)
+Connection::Connection(std::string_view host, int port, IpvType ipvType) : connId_(host, port), ipvType_(ipvType)
 {
 
 }
@@ -38,10 +38,10 @@ bool Connection::connect()
     hints.ai_socktype = SOCK_STREAM; // TCP
 
     // Resolve host
-    std::string port_str = std::to_string(port_);
+    std::string port_str = std::to_string(connId_.getPort());
 
-    if (getaddrinfo(host_.c_str(), port_str.c_str(), &hints, &addres) != 0) {
-        std::cout << "getaddrinfo failed for host: " << host_ <<  " " << port_ << std::endl;
+    if (getaddrinfo(connId_.getHostName().data(), port_str.c_str(), &hints, &addres) != 0) {
+        std::cout << "getaddrinfo failed for host: " << connId_.getHostName() <<  " " << connId_.getPort() << std::endl;
         return false;
     }
     

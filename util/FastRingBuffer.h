@@ -40,6 +40,7 @@ public:
 
 public:
     FastRingBuffer(std::size_t size);
+    std::size_t getSize() const { return logicalSize_; }
     bool empty() const { return start_ == end_; }
     std::size_t count () const { return end_ - start_; }
     void push(const T& data);
@@ -48,6 +49,8 @@ public:
     T popFront();
     T& back();
     const T& back() const;
+    T& operator[](std::size_t index) { return array_[ (start_ + index) & mask_ ]; }
+    const T& operator[](std::size_t index) const { return array_[ (start_ + index) & mask_ ]; }
     Iterator begin();
     Iterator end();
     ReverseIterator rbegin();

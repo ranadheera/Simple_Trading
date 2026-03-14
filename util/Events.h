@@ -8,10 +8,11 @@ enum class EventType {
 class EventBase {
 public:
     EventBase(EventType type) : type_(type) { }
-    EventType getEventType() { return type_; }
+    EventType getEventType() const { return type_; }
 private:
     EventType type_;
 };
+
 
 using notifyFuncType = void(*)(void*, const EventBase&);
 
