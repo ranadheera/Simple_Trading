@@ -1,7 +1,11 @@
+#ifndef MESSAGE_PARSER_H
+#define MESSAGE_PARSER_H
+
 #include <vector>
-#include "FastRingBuffer.h"
-#include "ParsedFixMessage.h"
 #include <cstring>
+#include "FastRingBuffer.h"
+#include "FixMessage.h"
+#include "FixTagValueReader.h"
 
 class TagValueReader;
 
@@ -57,38 +61,38 @@ class ParseSuccess : public ParseStatus
 {
 public:
     ParseSuccess() : ParseStatus(Type::SUCCESS) {}
-    void setMessage(const BaseFixMessage *message) { message_ = message; }
-    const BaseFixMessage&  getMessage() const { return *message_; }
+    void setMessage(const FixMsgType *message) { message_ = message; }
+    const FixMsgType&  getMessage() const { return *message_; }
 private:
-    const BaseFixMessage* message_ = nullptr;
+    const FixMsgType* message_ = nullptr;
 
 };
 
 class MessageParser
 {
 public:
-    MessageParser(const TradeSymbols& symbols, std::size_t bufferSize);
+    MessageParser(FixVersion version, const TradeSymbols& symbols);
 public:
-    bool append(char* array, int size);
-    const ParseStatus& parse();
+    const ParseStatus& parseBody(TagValueReader &reader);
+    const ParseStatus& parseHeader(TagValueReader &reader);
 private:
     const ParseStatus& parseMarketData(TagValueReader &reader);
     const ParseStatus& parseUpdate(TagValueReader& reader, FixMarketUpdate& marketUpdate);
-    const ParseStatus& parseBaseTags(TagValueReader& reader, BaseFixMessage& message);
+    const ParseStatus& parseHeaderTags(TagValueReader& reader, FixMessageHeader& message);
+    const ParseStatus& parseLoginSuccess(TagValueReader &reader);
+    const ParseStatus& parseHeartBeat(TagValueReader &reader);
     const TagReadError& tagReadError(int tag) { tagReadError_.setTag(tag); return tagReadError_; }
     const TagValueReadError& tagValueReadError(int tag) { tagValueReadError_.setTag(tag); return tagValueReadError_; }
     const MesssageNotComplete& msgNotComplete() { return msgNotComplete_; }
     const IncorrectTagValue& incorrectTagValue(int tag) {incorrectTagValue_.setTag(tag); return incorrectTagValue_;}
-    const ParseSuccess& success(const BaseFixMessage* msg) { success_.setMessage(msg); return success_; }
+    const ParseSuccess& success(const FixMsgType* msg) { success_.setMessage(msg); return success_; }
 private:
+    FixVersion version_;
     const TradeSymbols &symbols_;
-    std::vector<char> buffer_;
-    std::size_t bufferSize_;
-    std::size_t mask_;
-    std::size_t start_ = 0;
-    std::size_t parseStart_ = 0;
-    std::size_t end_ = 0;
-    ParsedFixMarketData parsedMarketData_;
+    FixMessageHeader headerMessage_;
+    FixMarketDataMessage parsedMarketData_;
+    FixLogonMessage loginSuccessMessage_;
+    FixHeartBeatMessage heartBeatMessage_;
     TagReadError tagReadError_;
     TagValueReadError tagValueReadError_;
     MesssageNotComplete msgNotComplete_;
@@ -96,26 +100,4 @@ private:
     ParseSuccess success_;
 };
 
-class TagValueReader
-{
-public:
-    TagValueReader(std::vector<char> &buffer, std::size_t start, std::size_t end, std::size_t mask) : buffer_(buffer), start_(start), end_(end), mask_(mask) {}
-    bool getTag(int& tag);
-    bool getValue(int& value);
-    bool getValue(double& value);
-    bool getValue(char& value);
-    bool getValue(char* value, int &length);
-    bool moveReadPosTo(std::size_t offset);
-    bool moveToNextTag();
-    bool empty() { return start_ == end_; }
-    std::size_t getLastTagPos() { return lastTagPos_ & mask_; }
-    std::size_t getParseBytes() { return parsePos_ - start_; }
-    std::size_t getRemainBytes() { return end_ - parsePos_; }
-private:
-    std::vector<char> &buffer_;
-    std::size_t mask_;
-    std::size_t start_;
-    std::size_t end_;
-    std::size_t parsePos_ = 0;
-    std::size_t lastTagPos_ = 0;
-};
+#endif

@@ -1,5 +1,5 @@
 #include "MessageParser.h"
-#include "Message.h"
+#include "FixTags.h"
 #include <iostream>
 
 using u64 = uint64_t;
@@ -73,62 +73,41 @@ TimeStamp fixTimestampToNs(const char* ts)
     return total_ns;
 }
 
-MessageParser::MessageParser(const TradeSymbols& symbols, std::size_t bufferSize) :
-    symbols_(symbols), buffer_(bufferSize), bufferSize_(bufferSize), mask_(bufferSize -1), parsedMarketData_(symbols.getNumSymbols())
+MessageParser::MessageParser(FixVersion version, const TradeSymbols& symbols) :
+    version_(version), symbols_(symbols), parsedMarketData_(symbols.getNumSymbols())
 {
 
 }
 
-bool MessageParser::append(char* array, int size)
+const ParseStatus& MessageParser::parseHeader(TagValueReader &reader)
 {
-   auto endIndex_ = end_ & mask_;
-   std::size_t remain = bufferSize_ - endIndex_;
 
-   if (remain >= size) {
-        memcpy(&buffer_[endIndex_], array, size);
-        end_ += size;
-   } else {
-        memcpy(&buffer_[endIndex_], array, remain);
-        auto remainBytesToWrite = size  - remain;
-        memcpy(&buffer_[0], array + remain, remainBytesToWrite);
-        end_ += size;
-
-        if (end_ - start_ > bufferSize_)
-            return false;
-
-        start_ += remainBytesToWrite;
-   }
-
-   return true;
-}
-
-
-const ParseStatus& MessageParser::parse()
-{
-    if (end_ - start_ < 16)
+    if (reader.getRemainBytes() < 16)
         return msgNotComplete_;
 
-    TagValueReader reader(buffer_, start_, end_, mask_);
-
+    
     int tag;
-    char beginstring[20];
 
-    if (!reader.getTag(tag) || (tag != FixTags::BeginString))
-        return tagReadError(FixTags::BeginString);
+    if (!reader.getTag(tag) || (tag != BeginString::id_))
+        return tagReadError(BeginString::id_);
 
-    int length;
+    char version[20];
 
-    if (!reader.getValue(beginstring, length))
-        return tagValueReadError(FixTags::BeginString);;
+    if (!reader.getValue(version, 20))
+         return tagValueReadError(BeginString::id_);
+    
+    FixVersion versionEnum = toEnum(version);
 
-
-    if (!reader.getTag(tag) || (tag != FixTags::BodyLength))
-        return tagReadError(FixTags::BodyLength);
+    if (versionEnum != version_)
+        return incorrectTagValue(BeginString::id_);
+    
+    if (!reader.getTag(tag) || (tag != BodyLength::id_))
+        return tagReadError(BodyLength::id_);
 
     int bodyLegth;
 
     if (!reader.getValue(bodyLegth))
-        return tagValueReadError(FixTags::BodyLength);
+        return tagValueReadError(BodyLength::id_);
 
     if (bodyLegth + 6 > reader.getRemainBytes())
         return msgNotComplete(); 
@@ -137,53 +116,59 @@ const ParseStatus& MessageParser::parse()
 
     reader.moveReadPosTo( msgTypeBeginPos + bodyLegth);
 
-    auto checksumTagPos = start_ + reader.getParseBytes();
+    auto checksumTagPos =  reader.getParseBytes();
 
-    if (!reader.getTag(tag) || tag != FixTags::CheckSum)
-        return tagReadError(FixTags::CheckSum);
+    if (!reader.getTag(tag) || tag != CheckSum::id_)
+        return tagReadError(CheckSum::id_);
     
     int checksum;
 
     if (!reader.getValue(checksum))
-        return tagValueReadError(FixTags::CheckSum);
+        return tagValueReadError(CheckSum::id_);
+
+    auto totalMsgSize = reader.getParseBytes();
 
     int checkSumCal = 0;
 
-    for (auto i = start_; i < checksumTagPos; ++i) {
-        unsigned char val = buffer_[i & mask_];
+    for (std::size_t i = 0;  i < checksumTagPos; ++i) {
+        unsigned char val = reader[i];
         checkSumCal += val;
     }
 
     checkSumCal = checkSumCal % 256;
 
     if (checkSumCal != checksum) {
-        return incorrectTagValue(FixTags::CheckSum);
+        return incorrectTagValue(CheckSum::id_);
     }
 
     reader.moveReadPosTo(msgTypeBeginPos);
-    
-    if (!reader.getTag(tag)) {
-        return tagReadError(FixTags::MsgType);
-    }
 
-    char messageType;
+    headerMessage_.reset();
+    headerMessage_.setTotalMsgSize(totalMsgSize);
+    return parseHeaderTags(reader, headerMessage_);
+}
 
-    if (!reader.getValue(messageType))
-        return tagValueReadError(FixTags::MsgType);
+const ParseStatus& MessageParser::parseBody(TagValueReader &reader)
+{
+    auto msgTYpe = headerMessage_.getBodyType();
 
-    switch (messageType) {
 
-        case 'X':
-            start_ = checksumTagPos + 7;
+    switch (msgTYpe) {
+        case FixMessageType::MARKET_DATA: 
             return parseMarketData(reader);
+        case FixMessageType::LOGON:
+            return parseLoginSuccess(reader);
+            break;
+        case FixMessageType::HEART_BEAT:
+            return parseHeartBeat(reader);
             break;
         default:
-            return incorrectTagValue(FixTags::MsgType);
+            return incorrectTagValue(MsgType::id_);
     }
 
 }
 
-const ParseStatus& MessageParser::parseBaseTags(TagValueReader& reader, BaseFixMessage& message)
+const ParseStatus& MessageParser::parseHeaderTags(TagValueReader& reader, FixMessageHeader& message)
 {
     int tag;
 
@@ -193,42 +178,41 @@ const ParseStatus& MessageParser::parseBaseTags(TagValueReader& reader, BaseFixM
             return tagReadError(tag);
 
         switch (tag) {
+            case MsgType::id_: {
+                char value;
 
-            case FixTags::SendingTime: {
-                char time[40]; int length;
+                if (!reader.getValue(value))
+                    return tagValueReadError(tag);
+                message.setBodyType(static_cast<FixMessageType>(value));
+                break;
+            }
+            case SendingTime::id_: {
+                char time[40]; 
+                int length = reader.getValue(time, 40);
 
-                if (reader.getValue(time, length)) {
-                    time[length] = '\0';
+                if (length > 0) {
                     message.setTimeStamp(fixTimestampToNs(time));
                 } else {
                     return tagValueReadError(tag);
                 }
                 break;
             }
-            case FixTags::SenderCompID: {
-                char senderCompID[30]; int length;
+            case SenderCompID::id_: {
 
-                if (reader.getValue(senderCompID, length)) {
-                    message.setSenderCompID(senderCompID, length);
-                } else {
+                if (!reader.getValue(message.getSenderCompID(), message.getSenderCompIDArrLength())) {
                     return tagValueReadError(tag);
                 }
-
                 break;
-
             }
-            case FixTags::TargetCompID: {
-                char targetCompID[30]; int length;
+            case TargetCompID::id_: {
                 
-                if (reader.getValue(targetCompID, length)) {
-                    message.setTargetCompID(targetCompID, length);
-                } else {
+                if (!reader.getValue(message.getTargetCompID(),  message.getTargetCompIDArrLength())) {
                     return tagValueReadError(tag);
                 }
                 break;
 
             }
-            case FixTags::MsgSeqNum: {
+            case MsgSeqNum::id_: {
                 int msgSeqNum;
 
                 if (reader.getValue(msgSeqNum)) {
@@ -238,31 +222,13 @@ const ParseStatus& MessageParser::parseBaseTags(TagValueReader& reader, BaseFixM
                 }
                 break;
             }
-            case FixTags::PossDupFlag:
-            case FixTags::PossResend: {
-                char value;
-                if (!reader.getValue(value)) {
-                    return tagValueReadError(tag);
-                }
-                break;
-            }
-            case FixTags::LastMsgSeqNumProcessed: {
-                int value;
-                if (!reader.getValue(value)) {
-                    return tagValueReadError(tag);
-                }
-                break;
-            }
-            case FixTags::SenderSubID:
-            case FixTags::TargetSubID:
-            case FixTags::OrigSendingTime: {
-                char value[40]; int length;
-                if (!reader.getValue(value, length)) {
-                    return tagValueReadError(tag);
-                }
-                break;
-
-            }
+            case PossDupFlag::id_:
+            case PossResend::id_:
+            case LastMsgSeqNumProcessed::id_:
+            case SenderSubID::id_:
+            case TargetSubID::id_:
+            case OrigSendingTime::id_:
+                reader.moveToNextTag();
                 break;
             default:
                 reader.moveReadPosTo(reader.getLastTagPos());
@@ -274,10 +240,11 @@ const ParseStatus& MessageParser::parseBaseTags(TagValueReader& reader, BaseFixM
 const ParseStatus& MessageParser::parseMarketData(TagValueReader& reader)
 {
     parsedMarketData_.reset();
-    auto& status = parseBaseTags(reader,parsedMarketData_);
+
+    /*auto& status = parseBaseTags(reader,parsedMarketData_);
 
     if (status.getType() != ParseStatus::Type::SUCCESS)
-        return status;
+        return status;*/
 
     int tag;
     int numEntries;
@@ -288,12 +255,12 @@ const ParseStatus& MessageParser::parseMarketData(TagValueReader& reader)
             return tagValueReadError(tag);
 
         switch (tag) {
-            case FixTags::NoEntries:
+            case NoEntries::id_:
                 if (!reader.getValue(numEntries)) {
                     return tagValueReadError(tag);
                 }
                 break;
-            case FixTags::UpdateAction: {
+            case UpdateAction::id_: {
                 int updateAction;
 
                 if (!reader.getValue(updateAction)) {
@@ -301,14 +268,14 @@ const ParseStatus& MessageParser::parseMarketData(TagValueReader& reader)
                 }
 
                 FixMarketUpdate update;
-                update.setUpdateAction(static_cast<UpdateAction>(updateAction));  
+                update.setUpdateAction(static_cast<UpdateAction::Types>(updateAction));  
                 auto &status = parseUpdate(reader, update);
 
                 if (status.getType() != ParseStatus::Type::SUCCESS)
                     return status;
 
                 if (update.getTimeStamp() == 0)
-                    update.setTimestamp(parsedMarketData_.getTimeStamp());
+                    update.setTimestamp(headerMessage_.getTimeStamp());
                 
                 parsedMarketData_.addMarketData(update);
                 break;
@@ -330,26 +297,27 @@ const ParseStatus& MessageParser::parseUpdate(TagValueReader& reader, FixMarketU
             return tagReadError(tag);
 
         switch (tag) {
-            case FixTags::EntryType: {
+            case EntryType::id_: {
                 int entryType;
                 if (!reader.getValue(entryType)) {
                     return tagValueReadError(tag);
                 }
-                marketUpdate.setEntryType(static_cast<EntryType>(entryType));
+                marketUpdate.setEntryType(static_cast<EntryType::Types>(entryType));
                 break;
             }
-            case FixTags::Symbol: {
-                char symbol[20]; int length;
-                if (!reader.getValue(symbol, length)) {
+            case Symbol::id_:{
+                char symbol[20]; 
+                int length = reader.getValue(symbol, 20);
+
+                if (!length)
                     return tagValueReadError(tag);
-                }
-                symbol[length] = '\0';
+
                 SymbolID id = symbols_.getSymbolID(symbol);
                 marketUpdate.setSymbolID(id);
                 break;
             }
-            case FixTags::LastPrice:
-            case FixTags::EntryPrice: {
+            case LastPrice::id_:
+            case EntryPrice::id_: {
                 double price;
                 if (!reader.getValue(price)) {
                     return tagValueReadError(tag);
@@ -357,7 +325,7 @@ const ParseStatus& MessageParser::parseUpdate(TagValueReader& reader, FixMarketU
                 marketUpdate.setPrice(price);
                 break;
             }
-            case FixTags::EntryPosition: {
+            case EntryPosition::id_: {
                 int position;
                 if (!reader.getValue(position)) {
                     return tagValueReadError(tag);
@@ -366,30 +334,14 @@ const ParseStatus& MessageParser::parseUpdate(TagValueReader& reader, FixMarketU
                 break;
             }
 
-            case FixTags::EntryID: {
-                char value[20]; int length;
-                if (!reader.getValue(value, length)) {
-                    return tagValueReadError(tag);
-                }
+            case EntryID::id_:
+            case RptSeq::id_:
+            case NumberOfOrders::id_:
+                reader.moveToNextTag();
                 break;
-            }
-            
-            case FixTags::RptSeq: {
-                int value;
-                if (!reader.getValue(value)) {
-                    return tagValueReadError(tag);
-                }
-                break;
-            }
-            case FixTags::NumberOfOrders: {
-                int value;
-                if (!reader.getValue(value)) {
-                    return tagValueReadError(tag);
-                }
-                break;
-            }
-            case FixTags::LastQuantity: 
-            case FixTags::EntrySize: {
+
+            case LastQuantity::id_: 
+            case EntrySize::id_: {
                 int value;
                 if (!reader.getValue(value)) {
                     return tagValueReadError(tag);
@@ -397,11 +349,13 @@ const ParseStatus& MessageParser::parseUpdate(TagValueReader& reader, FixMarketU
                 marketUpdate.setVolume(value);
                 break;
             }
-            case FixTags::TransactionTime: {
-                char value[40]; int length;
-                if (!reader.getValue(value, length)) {
+            case TransactionTime::id_: {
+                char value[40];
+                int length = reader.getValue(value, 40);
+
+                if (!length)
                     return tagValueReadError(tag);
-                }
+
                 marketUpdate.setTimestamp(fixTimestampToNs(value));
                 break;
             }
@@ -413,146 +367,90 @@ const ParseStatus& MessageParser::parseUpdate(TagValueReader& reader, FixMarketU
     }
 }
 
-bool TagValueReader::getTag(int &tag)
+const ParseStatus& MessageParser::parseLoginSuccess(TagValueReader &reader)
 {
-    tag = 0;
-    bool retval = false;
+    loginSuccessMessage_.reset();
 
-    for (auto i = parsePos_; i != end_; ++i) {
-        auto index = i & mask_;
-        char val = buffer_[index];
+    int tag;
 
-        if (val != '=' ) {
-            tag = tag * 10 + (val - '0');
-        } else {
-            retval = true;
-            lastTagPos_ = parsePos_ - start_;
-            parsePos_ = i + 1;
-            break;
-        }
-    }
-    return retval;
-}
+    while(true) {
 
-bool TagValueReader::getValue(int& value)
-{
-    value = 0;
-    bool retval = false;
+        if (!reader.getTag(tag))
+            return tagValueReadError(tag);
 
-    for (auto i = parsePos_ ; i != end_; ++i) {
-        auto index = i & mask_;
-        char val = buffer_[index];
+        switch (tag) {
+            case ResetSeqNumFlag::id_: {
+                char val;
 
-        if (val != OutMessage::SOH ) {
-            value = value * 10 + (val - '0');
-        } else {
-            retval = true;
-            parsePos_ = i + 1;
-            break;
-        }
-    }
-    return retval;
-}
+                if (!reader.getValue(val)) {
+                    return tagValueReadError(tag);
+                }
 
-bool TagValueReader::getValue(double& value)
-{
-    value = 0;
-    bool retval = false;
-    int decimals = 0;
-    bool decimal = false;
-
-    for (auto i = parsePos_ ; i != end_; ++i) {
-        auto index = i & mask_;
-        char val = buffer_[index];
-
-        if (val != OutMessage::SOH ) {
-
-            if ( val == '.') {
-                decimal = true;
-                continue;
+                loginSuccessMessage_.setResetSeqNumFlag(static_cast<ResetSeqNumFlag::Types>(val));
+                break;
             }
+            case HeartBtInt::id_: {
+                int val;
 
-            value = value * 10 + (val - '0');
+                if (!reader.getValue(val)) {
+                    return tagValueReadError(tag);
+                }
 
-            if (decimal)
-                ++decimals;
+                loginSuccessMessage_.setHeartBeatInterval(val);
+                break;
+            }
+            case NextExpectedSeqNum::id_: {
+                int val;
 
-        } else {
-            retval = true;
-            parsePos_ = i + 1;
-            break;
+                if (!reader.getValue(val)) {
+                    return tagValueReadError(tag);
+                }
+
+                loginSuccessMessage_.setNextExpectedSeqNum(val);
+                break;
+            }
+            case EncryptMethod::id_: {
+                int val;
+
+                if (!reader.getValue(val)) {
+                    return tagValueReadError(tag);
+                }
+
+                loginSuccessMessage_.setEncryptMethod(val);
+                break;
+            }
+            default:
+                reader.moveReadPosTo(reader.getLastTagPos());
+                return success(&loginSuccessMessage_);
         }
     }
-
-    while (decimals--)
-        value = value / 10;
-
-    return retval;
+        
 }
 
-bool TagValueReader::getValue(char& value)
+const ParseStatus& MessageParser::parseHeartBeat(TagValueReader &reader)
 {
-    bool retval = false;
+    heartBeatMessage_.reset();
+    
+    int tag;
 
-    for (auto i = parsePos_ ; i != end_; ++i) {
-        auto index = i & mask_;
-        char val = buffer_[index];
+    while(true) {
 
-        if (val != OutMessage::SOH ) {
-            value = val;
-        } else {
-            retval = true;
-            parsePos_ = i + 1;
-            break;
+        if (!reader.getTag(tag))
+            return tagValueReadError(tag);
+
+        switch (tag) {
+            case TestReqID::id_: {
+
+                auto length = reader.getValue(heartBeatMessage_.getTestID(), heartBeatMessage_.getTestIdArrLength());
+
+                if (!length) {
+                    return tagValueReadError(tag);
+                }
+                break;
+            }
+            default:
+                reader.moveReadPosTo(reader.getLastTagPos());
+                return success(&heartBeatMessage_);
         }
     }
-    return retval;
-}
-
-bool TagValueReader::getValue(char* value, int &length)
-{
-    bool retval = false;
-    length = 0;
-
-    for (std::size_t i = parsePos_; i != end_; ++i) {
-        auto index = i & mask_;
-        char val = buffer_[index];
-
-        if (val != OutMessage::SOH ) {
-            value[length] = val;
-            ++length;
-        } else {
-            retval = true;
-            parsePos_ = i + 1;
-            break;
-        }
-    }
-    return retval;
-}
-
-bool TagValueReader::moveReadPosTo(std::size_t offset)
-{
-    auto newReadPos = start_ + offset;
-
-    if (offset >= buffer_.size()) {
-        return false;
-    }
-
-    parsePos_ = newReadPos;
-    return true;
-}
-
-bool TagValueReader::moveToNextTag()
-{
-
-    for (std::size_t i = parsePos_; i != end_; ++i) {
-        auto index = i & mask_;
-        char val = buffer_[index];
-
-        if (val == OutMessage::SOH ) {
-            parsePos_ = i + 1;
-            return true;
-        } 
-    }
-    return false;;
 }

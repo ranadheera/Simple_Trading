@@ -7,6 +7,8 @@
 #include <string>
 #include <MarketData.h>
 
+template<auto N> concept PowerOfTwo = (N > 0) && ((N & (N - 1)) == 0);
+
 inline std::size_t getNextPowerOfTwo(std::size_t number)
 {
     if (number == 0)

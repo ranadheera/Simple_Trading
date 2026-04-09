@@ -13,7 +13,7 @@ bool SymbolMarketState::update(const std::vector<FixMarketUpdate> &marketdata)
     updateCount_.fetch_add(1, std::memory_order_acq_rel);
 
     for (auto &data : marketdata) {
-        if (data.getEntryType() == EntryType::BID || data.getEntryType() == EntryType::OFFER )
+        if (data.getEntryType() == EntryType::Types::BID || data.getEntryType() == EntryType::Types::OFFER )
             updateBook(data);
         else
             updateTrade(data);
@@ -87,7 +87,7 @@ bool MarketState::init()
     return initiaLized_;
 }
 
-void MarketState::update(const ParsedFixMarketData& fixMarketData)
+void MarketState::update(const FixMarketDataMessage& fixMarketData)
 {
     auto symbolCount = symbolMarketStates_.size();
 

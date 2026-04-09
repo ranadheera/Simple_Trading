@@ -4,7 +4,7 @@
 #include <vector>
 #include <atomic>
 #include "Liquidity.h"
-#include "ParsedFixMessage.h"
+#include "FixMessage.h"
 
 class L2Book
 {

@@ -5,7 +5,7 @@
 #include "MarketData.h"
 #include "Liquidity.h"
 #include "L2Book.h"
-#include "ParsedFixMessage.h"
+#include "FixMessage.h"
 #include "Events.h"
 
 /*class L1Book
@@ -73,7 +73,7 @@ public:
     MarketState(std::size_t symbolCount) : symbolMarketStates_(symbolCount), symbolChangeStatus_(symbolCount, false) {}
 public:
     const SymbolMarketState& getSymbolMarketState (std::size_t symbolId) const { return symbolMarketStates_[symbolId]; }
-    void update(const ParsedFixMarketData& fixMarketData);
+    void update(const FixMarketDataMessage& fixMarketData);
     void registerForMarketChanges(const Subscriber& subscriber) const { marketChangeSubscribers_.push_back(subscriber); }
     bool init();
 private:

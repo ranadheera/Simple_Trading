@@ -3,6 +3,8 @@
 
 enum class EventType {
     MARKET_CHANGE,
+    NEW_FIX_MESSAGE,
+    BROKER_CONNECTION_CLOSED,
 };
 
 class EventBase {

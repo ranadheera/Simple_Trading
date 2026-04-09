@@ -32,7 +32,7 @@ bool L2Book::update(const FixMarketUpdate &data) {
 
     bool updateSuccess = false;
 
-    if (data.getEntryType() == EntryType::OFFER)  {
+    if (data.getEntryType() == EntryType::Types::OFFER)  {
         updateSuccess = askLiquidity_.update(data.getPrice(), data.getVolume());
     } else {
         updateSuccess |= bidLiquidity_.update(data.getPrice(), data.getVolume());

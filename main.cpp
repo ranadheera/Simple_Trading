@@ -15,6 +15,7 @@
 #include "LogMgr.h"
 #include "FastRingBuffer.h"
 #include "MessageParser.h"
+#include "MessageBuilder.h"
 
 int main() {
 
@@ -235,18 +236,72 @@ int main() {
                    "55=AAPL\x01"
                    "31=190.40\x01"
                    "32=100\x01"
-                   "10=226\x01";
+                   "10=226\x01";*/
+
+    char array[128] = "8=FIX.4.4\x01"
+                "9=67\x01"
+                "35=A\x01"
+                "34=1\x01"
+                "49=BROKER\x01"
+                "56=CLIENT\x01"
+                "52=20260318-10:15:23.456\x01"
+                "98=0\x01"
+                "108=30\x01"
+                "10=136\x01";
+    
+    /*char array[128] = "8=FIX.4.4\x01"
+                    "9=55\x01"
+                    "35=0\x01"
+                    "34=2\x01"
+                    "49=BROKER\x01"
+                    "56=CLIENT\x01"
+                    "52=20260318-10:30:00.000\x01"
+                    "10=069\x01";*/
+
+char array2[] = "8=FIX.4.4\x01"
+"9=0103\x01"
+"35=A\x01"
+"49=samitha3\x01"
+"56=samitha4\x01"
+"34=0001\x01"
+"52=20260309-05:16:43.134627\x01"
+"553=samitha1\x01"
+"554=samitha2\x01"
+"98=0\x01"
+"108=15\x01"
+"10=170\x01";   
     TradeSymbols symbols;
     symbols.addSymbol("AAPL");
-    MessageParser parser(symbols, 256);
-    parser.append(array, 171);
-    auto &st = parser.parse();
+    MessageParser parser(FixVersion::FIX44, symbols);
+    TagValueReader reader(array2, 0, 127, 127);
+    auto &st = parser.parseHeader(reader);
 
     if (st.getType() == ParseStatus::Type::SUCCESS) {
         auto &success = static_cast<const ParseSuccess&>(st);
         auto &msg = success.getMessage();
-        auto &fixUpdate = static_cast<const ParsedFixMarketData&>(msg);
+        auto &fixUpdate = static_cast<const FixMessageHeader&>(msg);
         std::cout << fixUpdate;
-    }*/
+
+        auto &st = parser.parseBody(reader);
+
+
+        if (st.getType() == ParseStatus::Type::SUCCESS) {
+            auto &success = static_cast<const ParseSuccess&>(st);
+            auto &msg = success.getMessage();
+            auto &logon = static_cast<const FixLogonMessage&>(msg);
+            std::cout << logon << std::endl;
+        }
+    }
+
+    MessageBuilder builder(FixVersion::FIX44, 2048, 1000,  MessageBuilder::TimeStampAccuracy::MICRO);
+    FixLogonMessage logon;
+    logon.setUserName("samitha1");
+    logon.setPassWord("samitha2");
+    logon.setHeartBeatInterval(15);
+    OutMessage outMessage;
+    builder.addDataToOutMsg(logon, outMessage, "samitha3", "samitha4");
+    builder.finalizeOutMessage(outMessage, 1);
+    std::cout << outMessage;
+
     return 0;
 }

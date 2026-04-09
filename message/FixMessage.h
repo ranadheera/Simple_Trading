@@ -1,0 +1,160 @@
+#ifndef FIX_MESSAGE_H
+#define FIX_MESSAGE_H
+
+#include <vector>
+#include <cstring>
+#include <ostream>
+#include "FixTags.h"
+#include "MarketData.h"
+
+enum class FixMessageType { HEART_BEAT = '0',
+                            LOGON = 'A',
+                            MARKET_DATA = 'X',
+                            HEADER,
+                            UNDEFINED};
+
+
+class OutMessage;
+class MessageBuilder;
+
+class FixMsgType
+{
+public:
+    FixMsgType() = default;
+    FixMsgType(FixVersion version, FixMessageType type) : version_(version), type_(type) {}
+public:
+    FixVersion getVersion() const { return version_; }
+    FixMessageType getMessageType() const { return type_; }
+protected:
+    FixVersion version_ = FixVersion::UNDEFINED;
+    FixMessageType type_ = FixMessageType::UNDEFINED;
+};
+
+class FixMessageHeader : public FixMsgType
+{
+public:
+    FixMessageHeader() : FixMsgType(FixVersion::FIX44, FixMessageType::HEADER) { senderCompID_[0] = '\0'; targetCompID_[0] = '\0';}
+    void reset();
+public:
+    void setTimeStamp(TimeStamp time) { timestamp_ = time; }
+    TimeStamp getTimeStamp() const { return timestamp_; }
+    void setMessageSeqNum(std::size_t msgSeqNum) {  msgSeqNum_ =  msgSeqNum; }
+    std::size_t getMessageSeqNum() const { return msgSeqNum_; }
+    const char* getSenderCompID() const { return senderCompID_; }
+    char* getSenderCompID()  { return senderCompID_; }
+    const char* getTargetCompID()  const { return targetCompID_; }
+    char* getTargetCompID()  { return targetCompID_; }
+    std::size_t getSenderCompIDArrLength() { return 30; }
+    std::size_t getTargetCompIDArrLength() { return 30; }
+    void setTotalMsgSize(std::size_t size) { totalMsgSize_ = size; }
+    std::size_t getTotalMsgSize() const { return totalMsgSize_;}
+    bool convertToOutMessageFormart(OutMessage& outMessage);
+    void setBodyType(FixMessageType type) { bodyType_ = type; }
+    FixMessageType getBodyType() const { return bodyType_; }
+private:
+    std::size_t msgSeqNum_ = 0;
+    char senderCompID_[30];
+    char targetCompID_[30];
+    TimeStamp timestamp_ = 0;
+    std::size_t totalMsgSize_ = 0;
+    FixMessageType bodyType_ = FixMessageType::UNDEFINED;
+};
+
+class FixMarketUpdate
+{
+public:
+    FixMarketUpdate(SymbolID id, UpdateAction::Types updateAction, EntryType::Types entryType, TimeStamp time, Price price, Volume volume, int position);
+    FixMarketUpdate() = default;
+    void setSymbolID(SymbolID id) { id_ = id; }
+    SymbolID getSymbolID() const { return id_; }
+    void setUpdateAction(UpdateAction::Types action)  { updateAction_ = action; }
+    UpdateAction::Types getUpdateAction() const { return updateAction_; }
+    void setEntryType(EntryType::Types entryType) { entryType_ = entryType;}
+    EntryType::Types getEntryType() const { return entryType_; }
+    void setTimestamp(TimeStamp time) { time_ = time; }
+    TimeStamp getTimeStamp() const { return time_; }
+    void setPrice(Price price) { price_ = price; }
+    Price getPrice() const { return price_; }
+    void setVolume(Volume volume) {volume_ = volume; }
+    Volume getVolume() const { return volume_; }
+    void setPosition(int position) { position_ = position; }
+    int getPosition() const { return position_;}
+    
+private:
+    SymbolID id_ = NoSymbolID;
+    UpdateAction::Types updateAction_ = UpdateAction::Types::UNDEFINED;
+    EntryType::Types entryType_ = EntryType::Types::UNDEFINED;
+    TimeStamp time_ = 0;
+    Price price_ = 0;
+    Volume volume_ = 0;
+    int position_  = -1;
+};
+
+class SymbolMarketData
+{
+public:
+    SymbolMarketData() : marketData_(64) { }
+    void addMarketData(const FixMarketUpdate& data) { marketData_.push_back(data); }
+    const std::vector<FixMarketUpdate>& getMarketData() const { return marketData_; }
+    void reset() { marketData_.clear();}
+private:
+    std::vector<FixMarketUpdate> marketData_;
+};
+
+class FixMarketDataMessage : public FixMsgType
+{
+    friend std::ostream& operator<<(std::ostream& os, const FixMarketDataMessage& marketData);
+public:
+    FixMarketDataMessage(std::size_t numSymbols) : FixMsgType(FixVersion::FIX44, FixMessageType::MARKET_DATA), fixMarketData_(numSymbols) {}
+    const SymbolMarketData& getFixMarketData(SymbolID id) const { return fixMarketData_[id]; }
+    SymbolMarketData& getFixMarketData(SymbolID id) { return fixMarketData_[id]; }
+    void addMarketData(const FixMarketUpdate& data) { fixMarketData_[data.getSymbolID()].addMarketData(data); }
+    void reset();
+private:
+    std::vector<SymbolMarketData> fixMarketData_;
+};
+
+class FixLogonMessage : public FixMsgType
+{
+public:
+    void reset();
+    FixLogonMessage() : FixMsgType(FixVersion::FIX44,FixMessageType::LOGON) {}
+    void setResetSeqNumFlag(ResetSeqNumFlag::Types flag) { resetSeqNumFlag_ = flag; }
+    ResetSeqNumFlag::Types getResetSeqNumFlag() const { return resetSeqNumFlag_; }
+    void setHeartBeatInterval(TimeStamp interval) { heartBtSecond_ = interval; }
+    TimeStamp getHeartBeatInterval() const { return heartBtSecond_; }
+    void setNextExpectedSeqNum(int seqNum) { nextExpectedSeqNum_ = seqNum; }
+    int getNextExpectedSeqNum() const { return nextExpectedSeqNum_; }
+    void setEncryptMethod(int encryptMethod) {encryptMethod_ = encryptMethod; }
+    int getEncryptMethod() const { return encryptMethod_; }
+    void setUserName(std::string_view userName) { userName_ = userName; }
+    void setPassWord(std::string_view passWord) { passWord_ = passWord; }
+    bool convertToOutMessage( OutMessage &message, MessageBuilder &messageBuilder) const;
+private:
+    ResetSeqNumFlag::Types resetSeqNumFlag_ = ResetSeqNumFlag::Types::UNDEFINED;
+    TimeStamp heartBtSecond_ = 0;
+    int nextExpectedSeqNum_ = 0;
+    int encryptMethod_ = 0;
+    std::string_view userName_;
+    std::string_view passWord_;
+};
+
+class FixHeartBeatMessage : public FixMsgType
+{
+public:
+    void reset();
+    FixHeartBeatMessage() : FixMsgType(FixVersion::FIX44, FixMessageType::HEART_BEAT) { testID_[0] = '\0';}
+    char* getTestID() { return testID_; }
+    const char* getTestID() const { return testID_; }
+    std::size_t getTestIdArrLength() { return 30; }
+private:
+    char testID_[30];
+};
+
+std::ostream& operator<<(std::ostream& os, const FixMessageHeader& message);
+std::ostream& operator<<(std::ostream& os, const FixMarketDataMessage& message);
+std::ostream& operator<<(std::ostream& os, const SymbolMarketData& symbolMarketData);
+std::ostream& operator<<(std::ostream& os, const FixMarketUpdate& marketUpdate);
+std::ostream& operator<<(std::ostream& os, const FixLogonMessage& message);
+std::ostream& operator<<(std::ostream& os, const FixHeartBeatMessage& message);
+#endif
