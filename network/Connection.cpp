@@ -28,7 +28,7 @@ Connection::Connection(std::string_view host, int port, IpvType ipvType) : connI
     status_ = Status::NOTCONNECTED;
  }
 
-bool Connection::connect()
+Connection::Status Connection::connect()
 {
     struct addrinfo hints, *addres = nullptr;
 
@@ -42,7 +42,7 @@ bool Connection::connect()
 
     if (getaddrinfo(connId_.getHostName().data(), port_str.c_str(), &hints, &addres) != 0) {
         std::cout << "getaddrinfo failed for host: " << connId_.getHostName() <<  " " << connId_.getPort() << std::endl;
-        return false;
+        return status_;
     }
     
     std::unique_ptr<addrinfo, void(*)(addrinfo*)> res_ptr(addres, freeaddrinfo);
@@ -52,7 +52,7 @@ bool Connection::connect()
 
     if (fd_ < 0) {
         perror("socket");
-        return false;
+        return status_;
     }
 
     // Set non-blocking
@@ -60,7 +60,7 @@ bool Connection::connect()
 
     if (flags < 0 || fcntl(fd_, F_SETFL, flags | O_NONBLOCK) < 0) {
         perror("fcntl");
-        return false;
+        return status_;
     }
 
     // Try to connect
@@ -69,19 +69,39 @@ bool Connection::connect()
     if (ret < 0) {
         if (errno == EINPROGRESS) {
             // This is expected for non-blocking sockets
+            status_ = Status::CONNECTING;
             std::cout << "Connection in progress..." << std::endl;
         } else {
             perror("connect");
             close(fd_);
             fd_ = -1;
-            return false;
+            return status_;
         }
     } else {
+        status_ = Status::CONNECTED;
         std::cout << "Connected immediately!" << std::endl;
     }
 
-    status_ = Status::CONNECTED;
-    return true;
+    return status_;
+}
+
+Connection::Status Connection::checkStatus()
+{
+    if (status_ == Status::CONNECTING) {
+        int error = 0;
+        socklen_t len = sizeof(error);
+        auto retVal = getsockopt(fd_, SOL_SOCKET, SO_ERROR, &error, &len);
+
+        if (retVal >= 0) {
+            if (error == 0) {
+                status_ = Status::CONNECTED;
+            } else if ( error != EINPROGRESS) {
+                disconnect();
+                status_ = Status::NOTCONNECTED;
+            }
+        }
+    }
+    return status_;
 }
 
 int Connection::send(const char *message, int length)

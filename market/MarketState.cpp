@@ -93,10 +93,9 @@ void MarketState::update(const FixMarketDataMessage& fixMarketData)
 
     for (auto i = 0; i < symbolCount; ++i) {
         auto &symbolMarketData = fixMarketData.getFixMarketData(i);
-        auto &marketdata = symbolMarketData.getMarketData();
 
-        if (marketdata.size())
-            symbolChangeStatus_[i] = symbolMarketStates_[i].update(marketdata);
+        if (symbolMarketData.size())
+            symbolChangeStatus_[i] = symbolMarketStates_[i].update(symbolMarketData);
         else
             symbolChangeStatus_[i] = false;
     }

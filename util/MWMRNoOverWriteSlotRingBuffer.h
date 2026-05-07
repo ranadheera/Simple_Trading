@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <atomic>
+#include <vector>
 
 template<typename T> class MWMRNoOverWriteSlotRingBuffer
 {
@@ -14,6 +15,8 @@ public:
     friend class MWMRNoOverWriteSlotRingBuffer<T>;
     public:
         Slot() { status_.store(0, std::memory_order_release);}
+        Slot(const T& t) : data_(t) { status_.store(0, std::memory_order_release);}
+        Slot(const Slot& slot) : data_(slot.data_) { status_.store(slot.status_.load(std::memory_order_acquire), std::memory_order_release);}
         T& getData();;
     private:
         T data_;
@@ -22,14 +25,15 @@ public:
     };
 
 public:
-    MWMRNoOverWriteSlotRingBuffer(std::size_t size) : size_(size) {
-        array_ = new Slot[size];
+    MWMRNoOverWriteSlotRingBuffer(std::size_t size) : size_(size), array_(size) {
         writeIndex_.store(0);
         readIndex_.store(0);
     }
-    ~MWMRNoOverWriteSlotRingBuffer() {
-        delete[] array_;
+    MWMRNoOverWriteSlotRingBuffer(std::size_t size, const T& t) : size_(size), array_(size, Slot(t)) {
+        writeIndex_.store(0);
+        readIndex_.store(0);
     }
+
 public:
     Slot* getWriteSlot();
     Slot* getReadSlot();
@@ -55,7 +59,7 @@ private:
    std::size_t size_;
    std::atomic<int> writeIndex_;
    std::atomic<int> readIndex_ ;
-   Slot* array_;
+   std::vector<Slot> array_;
 };
  
 template<typename T> T& MWMRNoOverWriteSlotRingBuffer<T>::Slot::getData()

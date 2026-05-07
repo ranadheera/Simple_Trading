@@ -81,6 +81,7 @@ using SendingTime = FixTag<"52">;
 using Symbol = FixTag<"55">;
 using TargetCompID = FixTag<"56">;
 using TargetSubID = FixTag<"57">;
+using Text = FixTag<"58">;
 using TransactionTime = FixTag<"60">;
 using RptSeq = FixTag<"83">;
 using PossResend = FixTag<"97">;

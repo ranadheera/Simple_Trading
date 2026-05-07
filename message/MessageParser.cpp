@@ -73,8 +73,8 @@ TimeStamp fixTimestampToNs(const char* ts)
     return total_ns;
 }
 
-MessageParser::MessageParser(FixVersion version, const TradeSymbols& symbols) :
-    version_(version), symbols_(symbols), parsedMarketData_(symbols.getNumSymbols())
+MessageParser::MessageParser(const TradeSymbols& symbols, const std::vector<SymbolID> &interestedSymbols) :
+    symbols_(symbols), parsedMarketData_(symbols.getNumSymbols(), interestedSymbols)
 {
 
 }
@@ -277,6 +277,8 @@ const ParseStatus& MessageParser::parseMarketData(TagValueReader& reader)
                 if (update.getTimeStamp() == 0)
                     update.setTimestamp(headerMessage_.getTimeStamp());
                 
+                update.setUpdateSeqNum(headerMessage_.getMessageSeqNum());
+                
                 parsedMarketData_.addMarketData(update);
                 break;
             }
@@ -425,6 +427,32 @@ const ParseStatus& MessageParser::parseLoginSuccess(TagValueReader &reader)
         }
     }
         
+}
+
+const ParseStatus& MessageParser::parseLogout(TagValueReader &reader)
+{
+    logoutMessage_.reset();
+
+    int tag;
+
+    while(true) {
+
+        if (!reader.getTag(tag))
+            return tagValueReadError(tag);
+
+        switch (tag) {
+            case Text::id_: {
+
+                if (!reader.getValue(logoutMessage_.getReason(), logoutMessage_.getReasonArrLength())) {
+                    return tagValueReadError(tag);
+                }
+                break;
+            }
+            default:
+                reader.moveReadPosTo(reader.getLastTagPos());
+                return success(&logoutMessage_);
+        }
+    }
 }
 
 const ParseStatus& MessageParser::parseHeartBeat(TagValueReader &reader)

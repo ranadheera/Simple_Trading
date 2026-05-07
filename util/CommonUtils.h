@@ -6,8 +6,13 @@
 #include <vector>
 #include <string>
 #include <MarketData.h>
+#include <concepts>
 
 template<auto N> concept PowerOfTwo = (N > 0) && ((N & (N - 1)) == 0);
+
+constexpr  bool isPowerOfTwo(std::integral auto n) {
+    return (n > 0) && ((n & (n - 1)) == 0);
+}
 
 inline std::size_t getNextPowerOfTwo(std::size_t number)
 {

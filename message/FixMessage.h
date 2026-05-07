@@ -9,6 +9,7 @@
 
 enum class FixMessageType { HEART_BEAT = '0',
                             LOGON = 'A',
+                            LOGOUT = '5',
                             MARKET_DATA = 'X',
                             HEADER,
                             UNDEFINED};
@@ -67,6 +68,8 @@ public:
     FixMarketUpdate() = default;
     void setSymbolID(SymbolID id) { id_ = id; }
     SymbolID getSymbolID() const { return id_; }
+    void setUpdateSeqNum(std::size_t updateSeq) { updateSeqNum_ = updateSeq;}
+    std::size_t getUpdateSeqNum() const { return updateSeqNum_;}
     void setUpdateAction(UpdateAction::Types action)  { updateAction_ = action; }
     UpdateAction::Types getUpdateAction() const { return updateAction_; }
     void setEntryType(EntryType::Types entryType) { entryType_ = entryType;}
@@ -82,6 +85,7 @@ public:
     
 private:
     SymbolID id_ = NoSymbolID;
+    std::size_t updateSeqNum_ = 0;
     UpdateAction::Types updateAction_ = UpdateAction::Types::UNDEFINED;
     EntryType::Types entryType_ = EntryType::Types::UNDEFINED;
     TimeStamp time_ = 0;
@@ -90,25 +94,16 @@ private:
     int position_  = -1;
 };
 
-class SymbolMarketData
-{
-public:
-    SymbolMarketData() : marketData_(64) { }
-    void addMarketData(const FixMarketUpdate& data) { marketData_.push_back(data); }
-    const std::vector<FixMarketUpdate>& getMarketData() const { return marketData_; }
-    void reset() { marketData_.clear();}
-private:
-    std::vector<FixMarketUpdate> marketData_;
-};
+using SymbolMarketData = std::vector<FixMarketUpdate>;
 
 class FixMarketDataMessage : public FixMsgType
 {
     friend std::ostream& operator<<(std::ostream& os, const FixMarketDataMessage& marketData);
 public:
-    FixMarketDataMessage(std::size_t numSymbols) : FixMsgType(FixVersion::FIX44, FixMessageType::MARKET_DATA), fixMarketData_(numSymbols) {}
+    FixMarketDataMessage(std::size_t numSymbols, const std::vector<SymbolID> &interestedSymbols);
     const SymbolMarketData& getFixMarketData(SymbolID id) const { return fixMarketData_[id]; }
     SymbolMarketData& getFixMarketData(SymbolID id) { return fixMarketData_[id]; }
-    void addMarketData(const FixMarketUpdate& data) { fixMarketData_[data.getSymbolID()].addMarketData(data); }
+    void addMarketData(const FixMarketUpdate& data) { fixMarketData_[data.getSymbolID()].push_back(data); }
     void reset();
 private:
     std::vector<SymbolMarketData> fixMarketData_;
@@ -139,14 +134,28 @@ private:
     std::string_view passWord_;
 };
 
+class FixLogoutMessage : public FixMsgType
+{
+public:
+    FixLogoutMessage() { reason_[0] = '\0';}
+public:
+    void reset() { reason_[0] = '\0';}
+    char* getReason() { return reason_; }
+    const char* getReason() const { return reason_; }
+    std::size_t getReasonArrLength() const { return 50; }
+private:
+    char reason_[50];
+};
+
 class FixHeartBeatMessage : public FixMsgType
 {
 public:
-    void reset();
+    void reset() { testID_[0] = '\0'; }
     FixHeartBeatMessage() : FixMsgType(FixVersion::FIX44, FixMessageType::HEART_BEAT) { testID_[0] = '\0';}
     char* getTestID() { return testID_; }
     const char* getTestID() const { return testID_; }
     std::size_t getTestIdArrLength() { return 30; }
+    bool convertToOutMessage( OutMessage &message, MessageBuilder &messageBuilder) const;
 private:
     char testID_[30];
 };

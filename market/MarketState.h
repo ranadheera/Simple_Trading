@@ -64,7 +64,6 @@ private:
     L2Book l2Book_;
    // L1Book l1Book_;
     bool initialized_ = false;
-
 };
 
 class MarketState

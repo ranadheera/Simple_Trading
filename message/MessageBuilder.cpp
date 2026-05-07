@@ -27,8 +27,7 @@ std::ostream& operator<<(std::ostream& os, const OutMessage& message)
     return os;
 }
 
-MessageBuilder::MessageBuilder(FixVersion version, std::size_t bodyLength, std::size_t maxSeqNum, TimeStampAccuracy timeAccuracy) :
-    version_(version), timeAccuracy_(timeAccuracy)
+MessageBuilder::MessageBuilder(std::size_t bodyLength, std::size_t maxSeqNum, TimeStampAccuracy timeAccuracy) : timeAccuracy_(timeAccuracy)
 {
     auto numDigits = [](std::size_t n)->std::size_t {
         std::size_t ans = 1;
@@ -54,7 +53,7 @@ bool MessageBuilder::finalizeOutMessage(OutMessage& outMessage, std::size_t seqN
         return false;
 
     auto numLength = st.ptr - seqNumStrTmp;
-    auto numStartPtr = outMessage.buffer_.data() + seqNumPos_ + MsgSeqNum::length_ + 1 + seqNumPlaceHolder_.length() - numLength;
+    auto numStartPtr = outMessage.buffer_.data() + outMessage.seqNumPos_ + MsgSeqNum::length_ + 1 + seqNumPlaceHolder_.length() - numLength;
 
     std::memcpy(numStartPtr, seqNumStrTmp, numLength);
 
@@ -63,15 +62,15 @@ bool MessageBuilder::finalizeOutMessage(OutMessage& outMessage, std::size_t seqN
     std::tm utc_tm;
     gmtime_r(&now_time, &utc_tm);
 
-    auto timestartPtr = outMessage.buffer_.data() + timeStampPos_ + SendingTime::length_ + 1;
+    auto timestartPtr = outMessage.buffer_.data() + outMessage.timeStampPos_ + SendingTime::length_ + 1;
     auto timeEndPtr= timestartPtr + timeStampPlaceHolder_.length();
 
     st = std::to_chars(timestartPtr, timeEndPtr, utc_tm.tm_year + 1900);
 
     if (utc_tm.tm_mon + 1 < 10) {
-       st = std::to_chars(st.ptr + 1, timeEndPtr, utc_tm.tm_mon); 
+       st = std::to_chars(st.ptr + 1, timeEndPtr, utc_tm.tm_mon + 1); 
     } else {
-        st = std::to_chars(st.ptr, timeEndPtr, utc_tm.tm_mon);
+        st = std::to_chars(st.ptr, timeEndPtr, utc_tm.tm_mon + 1);
     }
 
     if (utc_tm.tm_mday < 10 ) {
@@ -101,7 +100,7 @@ bool MessageBuilder::finalizeOutMessage(OutMessage& outMessage, std::size_t seqN
     *st.ptr = ':';
     ++st.ptr;
 
-    if (utc_tm.tm_min < 10 ) {
+    if (utc_tm.tm_sec < 10 ) {
         st = std::to_chars(st.ptr + 1, timeEndPtr, utc_tm.tm_sec); 
     } else {
         st = std::to_chars(st.ptr, timeEndPtr, utc_tm.tm_sec); 
@@ -118,11 +117,12 @@ bool MessageBuilder::finalizeOutMessage(OutMessage& outMessage, std::size_t seqN
         auto micro = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()) % 1000000;
         accuracy = micro.count();
     } else {
-        std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000000000;
+        auto nano = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()) % 1000000000;
+        accuracy = nano.count();
     }
 
-    char accuracyStr[9];
-    st = std::to_chars(accuracyStr, accuracyStr + 8, accuracy);
+    char accuracyStr[10];
+    st = std::to_chars(accuracyStr, accuracyStr + 9, accuracy);
     auto accuracyLength = st.ptr -accuracyStr;
     memcpy(timeEndPtr - accuracyLength, accuracyStr, accuracyLength);
 

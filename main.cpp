@@ -16,6 +16,8 @@
 #include "FastRingBuffer.h"
 #include "MessageParser.h"
 #include "MessageBuilder.h"
+#include "Session.h"
+#include "Broker.h"
 
 int main() {
 
@@ -258,7 +260,7 @@ int main() {
                     "52=20260318-10:30:00.000\x01"
                     "10=069\x01";*/
 
-char array2[] = "8=FIX.4.4\x01"
+/*char array2[] = "8=FIX.4.4\x01"
 "9=0103\x01"
 "35=A\x01"
 "49=samitha3\x01"
@@ -272,7 +274,10 @@ char array2[] = "8=FIX.4.4\x01"
 "10=170\x01";   
     TradeSymbols symbols;
     symbols.addSymbol("AAPL");
-    MessageParser parser(FixVersion::FIX44, symbols);
+    std::vector<SymbolID> interestedSymbols;
+    interestedSymbols.push_back(symbols.getSymbolID("AAPL"));
+    MessageParser parser(symbols, interestedSymbols);
+    
     TagValueReader reader(array2, 0, 127, 127);
     auto &st = parser.parseHeader(reader);
 
@@ -291,9 +296,9 @@ char array2[] = "8=FIX.4.4\x01"
             auto &logon = static_cast<const FixLogonMessage&>(msg);
             std::cout << logon << std::endl;
         }
-    }
+    }*/
 
-    MessageBuilder builder(FixVersion::FIX44, 2048, 1000,  MessageBuilder::TimeStampAccuracy::MICRO);
+    /*MessageBuilder builder(2048, 1000,  MessageBuilder::TimeStampAccuracy::NANO);
     FixLogonMessage logon;
     logon.setUserName("samitha1");
     logon.setPassWord("samitha2");
@@ -301,7 +306,30 @@ char array2[] = "8=FIX.4.4\x01"
     OutMessage outMessage;
     builder.addDataToOutMsg(logon, outMessage, "samitha3", "samitha4");
     builder.finalizeOutMessage(outMessage, 1);
-    std::cout << outMessage;
+    std::cout << outMessage;*/
 
-    return 0;
+
+
+    SessionConfig<MessageParser, MessageBuilder> mdConfig("MDCLIENT", "MDSERVER", "localhost",5001);
+    mdConfig.timeAccuracy_ = MessageBuilder::TimeStampAccuracy::NANO;
+    mdConfig.heartBeatInterval_ = 15;
+    SessionConfig<MessageParser, MessageBuilder> oeConfig("OECLIENT", "OESERVER", "localhost",5002);
+    TradeSymbols symbols;
+    symbols.addSymbol("AAPL");
+    std::vector<SymbolID> interestedSymbols;
+    interestedSymbols.push_back(symbols.getSymbolID("AAPL"));
+    SessionWorker sw1;
+    Broker broker1(mdConfig, oeConfig, symbols, std::move(interestedSymbols));
+    auto st = broker1.openSessoins(sw1, sw1);
+
+    if (!st) {
+        std::cout << "can not connect to targets";
+    }
+
+    sw1.start();
+
+    while(true) {
+        sleep(10);
+    }
+   return 0;
 }

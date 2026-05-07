@@ -19,12 +19,13 @@ private:
 
 class Connection {
 public:
-    enum class Status {CONNECTED, NOTCONNECTED, CLOSED};
+    enum class Status {CONNECTING, CONNECTED, NOTCONNECTED};
     enum class IpvType {IPV4, IPV6};
 public:
     Connection(std::string_view host, int port, IpvType ipvType = IpvType::IPV4);
     ~Connection();
-    bool connect();
+    Status connect();
+    Status checkStatus();
     int send(const char *message, int length);
     int receive(char *message, int length);
     void disconnect();

@@ -8,7 +8,7 @@
 class OutMessage {
    
 friend class MessageBuilder;
-template<typename MsgParser, typename MsgBuilder, typename RawFixMsg> friend class Session;
+template<typename ConfigType> friend  class Session;
 friend std::ostream& operator<<(std::ostream& os, const OutMessage& message);
 public:
    enum class MessageStatus { INITIAL, DATA_FILLED, FINALIZED, INVALID };
@@ -23,6 +23,9 @@ private:
    std::size_t dataSize_ = 0;
    std::size_t sentCount_ = 0;
    MessageStatus status_ = MessageStatus::INITIAL;
+   std::size_t msgLenPos_;
+   std::size_t seqNumPos_;
+   std::size_t timeStampPos_;
 };
 
 class MessageBuilder
@@ -31,22 +34,23 @@ public:
     enum class UpdateStatus { SUCCESS, FORMAT_ERROR, OVERFLOW};
     enum class TimeStampAccuracy {MILLI = 3, MICRO = 6, NANO = 9};
 public:
-    MessageBuilder(FixVersion version, std::size_t bodyLength, std::size_t maxSeqNum, TimeStampAccuracy timeAccuracy);
+    MessageBuilder(std::size_t bodyLength, std::size_t maxSeqNum, TimeStampAccuracy timeAccuracy);
     template<typename T> bool addDataToOutMsg(const T& msg, OutMessage& outMessage, std::string_view id, std::string_view targetId);
     bool finalizeOutMessage(OutMessage& outMessage, std::size_t seqNum);
 public:
-   UpdateStatus addTagValue(OutMessage& msg, const char* tag, std::size_t tagLength, const char* value, std::size_t valueLength);
-   template<typename T> UpdateStatus addTagValue(OutMessage& msg, const char* tag, std::size_t tagLength, T value);
-   UpdateStatus addTagValue(OutMessage& msg, const char* tag, std::size_t tagLength, char value);
+    UpdateStatus addTagValue(OutMessage& msg, const char* tag, std::size_t tagLength, const char* value, std::size_t valueLength);
+    template<typename T> UpdateStatus addTagValue(OutMessage& msg, const char* tag, std::size_t tagLength, T value);
+    UpdateStatus addTagValue(OutMessage& msg, const char* tag, std::size_t tagLength, char value);
+    auto&  getLogonMessage() { logonMessage_.reset(); return logonMessage_;}
+    auto& getHeartBeatMessage() { heartBeatMessage_.reset(); return heartBeatMessage_; }
 private:
-    FixVersion version_;
+    FixVersion version_ = FixVersion::FIX44;
     TimeStampAccuracy timeAccuracy_;
     std::string seqNumPlaceHolder_;
     std::string bodyLengthPlaceHolder_;
     std::string timeStampPlaceHolder_;
-    std::size_t msgLenPos_;
-    std::size_t seqNumPos_;
-    std::size_t timeStampPos_;
+    FixLogonMessage logonMessage_;
+    FixHeartBeatMessage heartBeatMessage_;
 };
 
 template<typename T> bool MessageBuilder::addDataToOutMsg(const T& msg, OutMessage &outMessage, std::string_view id, std::string_view targetId)
@@ -62,14 +66,14 @@ template<typename T> bool MessageBuilder::addDataToOutMsg(const T& msg, OutMessa
     if (st != UpdateStatus::SUCCESS)
         return false;
    
-    msgLenPos_ = outMessage.dataSize_;
+    outMessage.msgLenPos_ = outMessage.dataSize_;
 
     st =  addTagValue(outMessage, BodyLength::name_, BodyLength::length_, bodyLengthPlaceHolder_.data(), bodyLengthPlaceHolder_.size());
 
     if (st != UpdateStatus::SUCCESS)
         return false;
       
-      auto bodyStartPos = outMessage.dataSize_;
+    auto bodyStartPos = outMessage.dataSize_;
 
     st = addTagValue(outMessage, MsgType::name_, MsgType::length_, static_cast<char>(msg.getMessageType()));
 
@@ -86,14 +90,14 @@ template<typename T> bool MessageBuilder::addDataToOutMsg(const T& msg, OutMessa
     if (st != UpdateStatus::SUCCESS)
         return false;
 
-    seqNumPos_ = outMessage.dataSize_;
+    outMessage.seqNumPos_ = outMessage.dataSize_;
 
     st = addTagValue(outMessage, MsgSeqNum::name_, MsgSeqNum::length_, seqNumPlaceHolder_.data(), seqNumPlaceHolder_.size());
 
      if (st != UpdateStatus::SUCCESS)
         return false;
     
-    timeStampPos_ = outMessage.dataSize_;
+    outMessage.timeStampPos_ = outMessage.dataSize_;
 
     st = addTagValue(outMessage, SendingTime::name_, SendingTime::length_, timeStampPlaceHolder_.data(), timeStampPlaceHolder_.size());
 
@@ -113,7 +117,7 @@ template<typename T> bool MessageBuilder::addDataToOutMsg(const T& msg, OutMessa
         return false;
 
     auto numDigits = convSt.ptr - bodyLengthStrTmp;
-    auto lengthStartPtr = outMessage.buffer_.data() + msgLenPos_ + BodyLength::length_ + 1 + bodyLengthPlaceHolder_.length() - numDigits;
+    auto lengthStartPtr = outMessage.buffer_.data() + outMessage.msgLenPos_ + BodyLength::length_ + 1 + bodyLengthPlaceHolder_.length() - numDigits;
     std::memcpy(lengthStartPtr, bodyLengthStrTmp, numDigits);
     return true;
 }

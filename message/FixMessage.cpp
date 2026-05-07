@@ -17,19 +17,22 @@ void FixLogonMessage::reset()
     encryptMethod_ = 0;
 }
 
-void FixHeartBeatMessage::reset()
-{
-    testID_[0] = '\0';
-}
-
 FixMarketUpdate::FixMarketUpdate(SymbolID id, UpdateAction::Types updateAction, EntryType::Types entryType, TimeStamp time, Price price, Volume volume, int position):
     id_(id), updateAction_(updateAction), entryType_(entryType), time_(time), price_(price), volume_(volume), position_(position) {}
 
 
+FixMarketDataMessage::FixMarketDataMessage(std::size_t numSymbols, const std::vector<SymbolID> &interestedSymbols):
+    FixMsgType(FixVersion::FIX44, FixMessageType::MARKET_DATA), fixMarketData_(numSymbols, SymbolMarketData(0))
+{
+        for (auto symbol : interestedSymbols) {
+            fixMarketData_[symbol].reserve(64);
+        }
+}
+
 void FixMarketDataMessage::reset()
 {
     for (auto &symboldata : fixMarketData_) {
-        symboldata.reset();
+        symboldata.clear();
     }
 }
 
@@ -46,17 +49,16 @@ std::ostream& operator<<(std::ostream& os, const FixMessageHeader& message)
 std::ostream& operator<<(std::ostream& os, const FixMarketDataMessage& message)
 {
     for (auto &symbolMarketData : message.fixMarketData_) {
-        if (!symbolMarketData.getMarketData().empty()) {
+        if (!symbolMarketData.empty()) {
             os << symbolMarketData << std::endl;
         }
     }
     return os;
 }
+
 std::ostream& operator<<(std::ostream& os, const SymbolMarketData& symbolMarketData)
 {
-    auto &marketDataList =  symbolMarketData.getMarketData();
-
-    for (auto &marketData : marketDataList) {
+    for (auto &marketData : symbolMarketData) {
         os << marketData << std::endl;
     }
     return os;
@@ -104,7 +106,12 @@ bool FixLogonMessage::convertToOutMessage( OutMessage &message, MessageBuilder &
     
     }
 
-    auto st = messageBuilder.addTagValue(message, EncryptMethod::name_, EncryptMethod::length_, encryptMethod_);
+    auto st = messageBuilder.addTagValue(message, ResetSeqNumFlag::name_, ResetSeqNumFlag::length_, static_cast<char>(ResetSeqNumFlag::Types::YES));
+
+    if (st != MessageBuilder::UpdateStatus::SUCCESS)
+        return false;
+
+    st = messageBuilder.addTagValue(message, EncryptMethod::name_, EncryptMethod::length_, encryptMethod_);
 
     if (st != MessageBuilder::UpdateStatus::SUCCESS)
         return false;
@@ -114,5 +121,18 @@ bool FixLogonMessage::convertToOutMessage( OutMessage &message, MessageBuilder &
     if (st != MessageBuilder::UpdateStatus::SUCCESS)
         return false;
 
+    return true;
+}
+
+bool FixHeartBeatMessage::convertToOutMessage( OutMessage &message, MessageBuilder &messageBuilder) const
+{
+    if (testID_[0] != '\0') {
+        auto len = strlen(testID_);
+        auto st = messageBuilder.addTagValue(message, TestReqID::name_, TestReqID::length_, testID_, len);
+
+        if (st != MessageBuilder::UpdateStatus::SUCCESS)
+            return false;
+
+    }
     return true;
 }
